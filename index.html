@@ -1,0 +1,2936 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Welding Master 3D — Simulador de Solda</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0b0f17;
+            font-family: 'Inter', sans-serif;
+            color: #e2e8f0;
+            touch-action: none;
+        }
+        .font-industrial {
+            font-family: 'Chakra Petch', sans-serif;
+        }
+        #canvas-container {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            cursor: crosshair;
+        }
+        #mask-overlay {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 5;
+            background-color: rgba(2, 35, 25, 0);
+            transition: background-color 0.08s ease-out;
+        }
+        .glass-hud {
+            background: rgba(15, 23, 42, 0.74);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+        }
+        .btn-glow {
+            transition: all 0.18s ease;
+        }
+        .btn-glow:active {
+            transform: scale(0.96);
+        }
+        /* Range slider estilizado */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: rgba(51, 65, 85, 0.8);
+            height: 6px;
+            border-radius: 999px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #f59e0b;
+            border: 2px solid #fef3c7;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(245, 158, 11, 0.65);
+        }
+        @keyframes pulseFeedback {
+            0% { opacity: 0; transform: translate(-50%, 6px); }
+            15% { opacity: 1; transform: translate(-50%, 0); }
+            85% { opacity: 1; transform: translate(-50%, 0); }
+            100% { opacity: 0; transform: translate(-50%, -6px); }
+        }
+        .feedback-toast {
+            animation: pulseFeedback 2.1s ease forwards;
+        }
+    </style>
+</head>
+<body>
+    <!-- Container WebGL Three.js -->
+    <div id="canvas-container"></div>
+
+    <!-- Filtro de Máscara de Solda Auto-Escurecimento -->
+    <div id="mask-overlay"></div>
+
+    <!-- HUD SUPERIOR ULTRA-CLEAN (SEM SOBREPOSIÇÃO E SEM CORTES) -->
+    <header class="fixed top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+        <!-- Esquerda: Peça, Volume e Troca Rápida -->
+        <div class="glass-hud px-3 py-1.5 rounded-2xl flex items-center gap-2.5 pointer-events-auto">
+            <span class="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_#fbbf24] shrink-0"></span>
+            <div class="flex flex-col leading-tight">
+                <span id="level-title" class="font-industrial font-bold text-xs sm:text-sm text-white tracking-wide whitespace-nowrap">1. Chanfro em V (60°)</span>
+                <span id="level-spec" class="text-[10px] text-slate-400 hidden sm:block">3 Camadas • Ideal 115A</span>
+            </div>
+            <div class="h-6 w-px bg-slate-700/70"></div>
+            <div class="flex flex-col min-w-[58px]">
+                <div class="flex items-center justify-between text-[9px] font-semibold text-slate-400">
+                    <span>VOL</span>
+                    <span id="volume-pct" class="text-emerald-400 font-industrial">0%</span>
+                </div>
+                <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mt-0.5">
+                    <div id="volume-bar" class="h-full bg-gradient-to-r from-emerald-500 to-teal-300 transition-all duration-150" style="width: 0%"></div>
+                </div>
+            </div>
+            <div class="h-6 w-px bg-slate-700/70"></div>
+            <button onclick="cycleStructure()" class="btn-glow px-2 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-[11px] font-industrial font-semibold text-slate-200 hover:text-white" title="Alternar Estrutura/Chanfro">
+                ⚙️ Peça
+            </button>
+            <button onclick="openTutorial()" class="btn-glow w-6 h-6 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-[11px] font-industrial font-bold text-amber-300 flex items-center justify-center" title="Guia Rápido e Controles">
+                ?
+            </button>
+        </div>
+
+        <!-- Centro: Seletor Rápido de Câmeras (1 a 5 — Padrão: 1 Topo) -->
+        <div class="glass-hud px-2 py-1.5 rounded-2xl flex items-center gap-1 pointer-events-auto">
+            <span class="text-[10px] font-industrial text-slate-400 px-1.5 hidden md:inline">CÂM</span>
+            <button id="cam-btn-1" onclick="setCameraPreset(1)" class="cam-preset-btn btn-glow w-7 h-7 rounded-xl text-xs font-industrial font-bold bg-amber-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.4)]" title="1: Topo (Padrão)">1</button>
+            <button id="cam-btn-2" onclick="setCameraPreset(2)" class="cam-preset-btn btn-glow w-7 h-7 rounded-xl text-xs font-industrial font-bold bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700" title="2: 3/4 Bancada">2</button>
+            <button id="cam-btn-3" onclick="setCameraPreset(3)" class="cam-preset-btn btn-glow w-7 h-7 rounded-xl text-xs font-industrial font-bold bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700" title="3: Close-Up Raiz">3</button>
+            <button id="cam-btn-4" onclick="setCameraPreset(4)" class="cam-preset-btn btn-glow w-7 h-7 rounded-xl text-xs font-industrial font-bold bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700" title="4: Perfil Lateral">4</button>
+            <button id="cam-btn-5" onclick="setCameraPreset(5)" class="cam-preset-btn btn-glow w-7 h-7 rounded-xl text-xs font-industrial font-bold bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700" title="5: Alinhamento Frontal">5</button>
+            <button onclick="resetCameraView()" class="btn-glow w-7 h-7 rounded-xl text-xs bg-slate-800/60 hover:bg-slate-700 text-slate-300 hover:text-white ml-0.5" title="Recentralizar Câmera">🎯</button>
+        </div>
+
+        <!-- Direita: Pontos, Calor e Ritmo Compacto -->
+        <div class="glass-hud px-3 py-1.5 rounded-2xl flex items-center gap-3 pointer-events-auto">
+            <div class="flex items-center gap-1.5">
+                <span id="score-val" class="font-industrial font-bold text-sm text-amber-300">0</span>
+                <span id="combo-val" class="text-[10px] font-industrial font-bold text-sky-400 bg-sky-500/15 px-1.5 py-0.5 rounded-md">1.0x</span>
+            </div>
+
+            <div class="h-6 w-px bg-slate-700/70"></div>
+
+            <div class="flex flex-col min-w-[60px]">
+                <div class="flex items-center justify-between text-[9px] font-semibold text-slate-400">
+                    <span>CALOR</span>
+                    <span id="heat-pct" class="text-sky-300 font-industrial">0%</span>
+                </div>
+                <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mt-0.5">
+                    <div id="heat-bar" class="h-full bg-gradient-to-r from-sky-400 via-amber-400 to-red-500 transition-all duration-100" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div class="h-6 w-px bg-slate-700/70 hidden sm:block"></div>
+
+            <span id="speed-status" class="hidden sm:inline-block min-w-[68px] text-center text-[11px] font-industrial font-bold text-slate-300 bg-slate-800/80 px-2 py-0.5 rounded-lg">PRONTO</span>
+        </div>
+    </header>
+
+    <!-- Feedback Dinâmico Central (Toast) -->
+    <div id="live-feedback" class="fixed top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none text-xs font-industrial font-bold tracking-wider px-3.5 py-1.5 rounded-full glass-hud opacity-0"></div>
+
+    <!-- DOCK INFERIOR CENTRALIZADO & MINIMALISTA -->
+    <footer class="fixed bottom-3 left-1/2 -translate-x-1/2 z-20 max-w-[96vw] pointer-events-none">
+        <div class="glass-hud px-3 py-1.5 rounded-2xl flex items-center gap-2.5 sm:gap-3 pointer-events-auto">
+            <!-- Indicador de Técnica Detectada -->
+            <div class="flex items-center gap-1.5 pr-1">
+                <span id="tech-dot" class="w-2 h-2 rounded-full bg-slate-500 shrink-0"></span>
+                <span id="detected-tech-label" class="text-[11px] font-industrial font-bold text-slate-300 whitespace-nowrap">Livre</span>
+            </div>
+
+            <div class="h-5 w-px bg-slate-700/70"></div>
+
+            <!-- Amperagem -->
+            <div class="flex items-center gap-2">
+                <input id="amp-slider" type="range" min="70" max="180" value="115" class="w-20 sm:w-24" oninput="onAmpChange(this.value)" title="Ajustar Amperagem">
+                <span id="amp-val" class="font-industrial font-bold text-xs text-amber-400 min-w-[34px] text-right">115A</span>
+            </div>
+
+            <div class="h-5 w-px bg-slate-700/70"></div>
+
+            <!-- Ações Principais -->
+            <div class="flex items-center gap-1.5">
+                <button onclick="rotateWorkpiece()" id="rotate-pipe-btn" class="hidden btn-glow px-2.5 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-sky-300 text-xs font-industrial font-bold" title="Girar Tubulação (+45°)">
+                    ↻ Tubo
+                </button>
+                <button onclick="chipAllSlag()" class="btn-glow px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/30 text-amber-300 text-xs font-industrial font-bold flex items-center gap-1" title="Remover Casca de Escória">
+                    <span>🔨</span> <span class="hidden sm:inline">Picador</span>
+                </button>
+                <button onclick="resetLevel()" class="btn-glow px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-600/40 text-slate-200 text-xs font-industrial font-semibold" title="Limpar Peça">
+                    Limpar
+                </button>
+                <button onclick="inspectWeld()" class="btn-glow px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 text-xs font-industrial font-bold shadow-[0_0_14px_rgba(16,185,129,0.3)]">
+                    Inspecionar ✓
+                </button>
+                <button onclick="toggleSound()" id="sound-btn" class="btn-glow w-7 h-7 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-600/40 text-slate-300 text-xs flex items-center justify-center" title="Ligar/Desligar Som">
+                    🔊
+                </button>
+            </div>
+        </div>
+    </footer>
+
+    <!-- MODAL TUTORIAL INICIAL (3 PASSOS) -->
+    <div id="tutorial-modal" class="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-4">
+        <div class="glass-hud max-w-md w-full rounded-3xl p-6 border border-slate-700/60 shadow-2xl">
+            <div class="flex items-center justify-between mb-4">
+                <span class="text-[11px] font-industrial font-bold uppercase tracking-widest text-amber-400">Welding Master 3D • Guia Rápido</span>
+                <span id="tut-step-badge" class="text-[11px] font-industrial text-slate-400">1 / 3</span>
+            </div>
+            <div class="flex flex-col items-center text-center py-2">
+                <div id="tut-icon" class="text-4xl mb-3">🔥</div>
+                <h2 id="tut-title" class="font-industrial font-bold text-xl text-white mb-2">1. Poça de Fusão Viva & Camadas</h2>
+                <p id="tut-desc" class="text-sm text-slate-300 leading-relaxed"></p>
+            </div>
+            <div class="flex items-center justify-between mt-6 pt-4 border-t border-slate-800">
+                <button onclick="closeTutorial()" class="text-xs text-slate-400 hover:text-slate-200 font-semibold px-2 py-1">Pular</button>
+                <div class="flex gap-2">
+                    <button id="tut-prev-btn" onclick="prevTutorialStep()" class="hidden px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-industrial font-semibold text-slate-200">Anterior</button>
+                    <button id="tut-next-btn" onclick="nextTutorialStep()" class="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-xs font-industrial font-bold">Próximo →</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DE INSPEÇÃO FINAL -->
+    <div id="inspect-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+        <div class="glass-hud max-w-md w-full rounded-3xl p-6 border border-slate-700/60 shadow-2xl">
+            <div class="flex items-center justify-between mb-3">
+                <span class="text-[11px] font-industrial font-bold uppercase tracking-widest text-emerald-400">Relatório de Inspeção Técnica</span>
+                <span id="insp-badge" class="px-2.5 py-0.5 rounded-full text-xs font-industrial font-bold bg-emerald-500/20 text-emerald-300">APROVADO</span>
+            </div>
+            <div class="text-center my-3">
+                <div id="insp-grade" class="font-industrial font-bold text-5xl text-white">92%</div>
+                <p id="insp-comment" class="text-xs text-slate-300 mt-2"></p>
+            </div>
+            <div class="grid grid-cols-3 gap-2 my-4">
+                <div class="bg-slate-900/70 rounded-xl p-2.5 text-center border border-slate-800">
+                    <div class="text-[10px] text-slate-400 font-semibold">VOLUME</div>
+                    <div id="insp-vol" class="font-industrial font-bold text-base text-emerald-400">0%</div>
+                </div>
+                <div class="bg-slate-900/70 rounded-xl p-2.5 text-center border border-slate-800">
+                    <div class="text-[10px] text-slate-400 font-semibold">PRECISÃO</div>
+                    <div id="insp-prec" class="font-industrial font-bold text-base text-sky-400">0%</div>
+                </div>
+                <div class="bg-slate-900/70 rounded-xl p-2.5 text-center border border-slate-800">
+                    <div class="text-[10px] text-slate-400 font-semibold">TÉRMICA</div>
+                    <div id="insp-heat" class="font-industrial font-bold text-base text-amber-400">0%</div>
+                </div>
+            </div>
+            <div class="flex items-center justify-between gap-2 mt-5">
+                <button onclick="closeInspectAndRetry()" class="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-industrial font-bold text-slate-200">Refazer Peça</button>
+                <button onclick="nextStructure()" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 text-xs font-industrial font-bold">Próxima Estrutura →</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // =========================================================================
+        // WELDING MASTER 3D — ENGINE THREE.JS + GAUSSIAN SPLATTING + POÇA CONFORMAL
+        // =========================================================================
+
+        let scene, camera, renderer, envMapTexture;
+        let workpieceGroup, weldBeadsGroup, slagGroup, fallingSlagGroup, guideGroup;
+        let torchGroup, moltenPuddleMesh, arcLight;
+        let raycaster, mouseNDC;
+
+        // Sistema de Gaussian Splats Volumétricos (Arco, Plasma, Faíscas, Fumaça)
+        const MAX_SPLATS = 900;
+        let splatGeometry, splatMaterial, splatPoints;
+        let splatData = [];
+        let splatPositions, splatColors, splatSizes, splatOpacities;
+        let splatCursor = 0;
+
+        // Texturas PBR procedurais
+        let slagAlbedoTex, slagBumpTex, steelPlateTex, steelRoughTex;
+
+        // Câmera Interativa (Presets 1-5 com Padrão 1=Topo + WASD + Botão Direito + Scroll)
+        let camState = {
+            theta: 0.0,
+            phi: 0.14,
+            radius: 7.6,
+            baseRadius: 7.6,
+            preset: 1, // 1=Topo (Padrão), 2=3/4, 3=Close-Up, 4=Lateral, 5=Alinhamento
+            target: new THREE.Vector3(0, 0.35, 0),
+            desiredTarget: new THREE.Vector3(0, 0.35, 0)
+        };
+        let isOrbiting = false;
+        let orbitLastX = 0;
+        let orbitLastY = 0;
+        const keysPressed = { w: false, a: false, s: false, d: false, up: false, down: false, left: false, right: false };
+
+        // Estado do Jogo e Física de Soldagem
+        let currentLevel = 0;
+        let isWelding = false;
+        let amperage = 115;
+        let heatLevel = 0;
+        let soundEnabled = true;
+        let pipeRollAngle = 0;
+        let pipeTargetRollAngle = 0;
+
+        // Pontuação e Métricas de Inspeção
+        let score = 0;
+        let combo = 1.0;
+        let totalSamplesDeposited = 0;
+        let onTargetSamples = 0;
+        let burnThroughCount = 0;
+
+        // Guia Holográfico do Chanfro
+        let guideMesh = null;
+        let guideUniformTime = 0;
+
+        // =========================================================================
+        // MOTOR DE POÇA DE FUSÃO TÉRMICA EM MALHA CONFORMAL CONTÍNUA (u, v)
+        // =========================================================================
+        const FIELD_NU = 184;
+        const FIELD_NV = 80;
+        const FIELD_VERTS = FIELD_NU * FIELD_NV;
+        const T_MELT = 0.65; // Ponto de fusão: acima disso o metal está líquido (amarelo-dourado)
+
+        let weldField = null;
+        let weldSurfaceMesh = null;
+        let slagShellMesh = null;
+
+        // Casca de escória em fragmentos 3D reais
+        let slagPatches = [];
+        let pendingSlagBox = null;
+        let pendingSlagCount = 0;
+        let fallingShards = [];
+
+        // Estado da Tocha, Movimento Livre e Diagnóstico em Tempo Real
+        let pointerActive = false;
+        let hasValidAim = false;
+        let aimWorldPos = new THREE.Vector3(0, 0.4, 0);
+        let aimNormal = new THREE.Vector3(0, 1, 0);
+        let aimUV = { u: 0, v: 0, valid: false };
+        let filteredAimPos = new THREE.Vector3(0, 0.4, 0);
+        let lastWeldUV = null;
+        let lastWeldWorldPos = null;
+        let weldSpeedSmooth = 0;
+        let dwellTime = 0;
+        let puddleRadiusFactor = 1.0;
+        let solidificationPhase = 0;
+
+        // Detecção automática de Técnica (Passe Reto vs Zigue-Zague)
+        let motionHistory = []; // [{ u, v, t }]
+        let detectedTech = 'Livre';
+
+        // Web Audio API (Sintetizador procedural de arco, estalo de escória e picador)
+        let audioCtx = null;
+        let arcGainNode = null;
+        let arcFilterNode = null;
+        let arcOscNode = null;
+
+        // Relógio de simulação
+        let lastFrameTime = 0;
+        let feedbackTimer = null;
+
+        // =========================================================================
+        // DEFINIÇÃO DAS 4 ESTRUTURAS INDUSTRIAIS E CHANFROS 3D
+        // =========================================================================
+        const STRUCTURES = [
+            {
+                id: 'v-groove',
+                name: '1. Chanfro em V (60°)',
+                spec: '3 Camadas • Ideal 115A',
+                idealAmp: 115,
+                isPipe: false,
+                targetFillThickness: 0.48,
+                grooveHalfWidth: 0.46,
+                uMin: -4.15,
+                uMax: 4.15,
+                vMin: -2.55,
+                vMax: 2.55,
+                wrapU: false,
+                baseH: (u, v) => {
+                    const av = Math.abs(v);
+                    if (av <= 0.10) return 0.008;
+                    if (av < 0.48) return 0.008 + ((av - 0.10) / 0.38) * 0.642;
+                    return 0.65;
+                },
+                evalPos: (u, v, h, out) => {
+                    out.set(u, h, v);
+                    return out;
+                },
+                evalNormal: (u, v, out) => {
+                    const av = Math.abs(v);
+                    if (av > 0.10 && av < 0.48) {
+                        const sgn = v >= 0 ? -1 : 1;
+                        out.set(0, 0.38, sgn * 0.642).normalize();
+                    } else {
+                        out.set(0, 1, 0);
+                    }
+                    return out;
+                },
+                worldToUV: (p) => ({ u: p.x, v: p.z })
+            },
+            {
+                id: 't-fillet',
+                name: '2. Junta em T — Filete (90°)',
+                spec: 'Passe Raiz + Acabamento • Ideal 125A',
+                idealAmp: 125,
+                isPipe: false,
+                targetFillThickness: 0.42,
+                grooveHalfWidth: 0.55,
+                uMin: -4.15,
+                uMax: 4.15,
+                vMin: -1.85,
+                vMax: 2.15,
+                wrapU: false,
+                // Domínio conformal dobrado em 90°: v < 0 sobe na alma vertical (-Z), v >= 0 avança na mesa horizontal (+Z)
+                baseH: (u, v) => 0.006,
+                evalPos: (u, v, h, out) => {
+                    const s2 = Math.SQRT1_2;
+                    // Base do canto (y = 0.25, z = 0)
+                    if (v < 0) {
+                        // Alma vertical (y sobe de 0.25 até 2.10, z = 0) -> deslocamento h na bissetriz 45° (+Y, +Z)
+                        const baseY = 0.25 + (-v);
+                        const baseZ = 0.0;
+                        out.set(u, baseY + h * s2, baseZ + h * s2);
+                    } else {
+                        // Mesa horizontal (y = 0.25, z avança de 0 até 2.15) -> deslocamento h na bissetriz 45° (+Y, +Z)
+                        const baseY = 0.25;
+                        const baseZ = v;
+                        out.set(u, baseY + h * s2, baseZ + h * s2);
+                    }
+                    return out;
+                },
+                evalNormal: (u, v, out) => {
+                    if (Math.abs(v) < 0.18) {
+                        out.set(0, Math.SQRT1_2, Math.SQRT1_2);
+                    } else if (v < 0) {
+                        out.set(0, 0, 1);
+                    } else {
+                        out.set(0, 1, 0);
+                    }
+                    return out;
+                },
+                worldToUV: (p) => {
+                    const dy = Math.max(0, p.y - 0.25);
+                    const dz = Math.max(0, p.z);
+                    // Projeta no eixo conformal v (negativo sobe na parede vertical, positivo avança na mesa)
+                    const v = (dy > dz) ? -(dy - dz * 0.35) : (dz - dy * 0.35);
+                    return { u: p.x, v };
+                }
+            },
+            {
+                id: 'u-curve',
+                name: '3. Chanfro em U Curvo',
+                spec: 'Trajetória Sinuosa • Ideal 120A',
+                idealAmp: 120,
+                isPipe: false,
+                targetFillThickness: 0.46,
+                grooveHalfWidth: 0.50,
+                uMin: -4.15,
+                uMax: 4.15,
+                vMin: -2.45,
+                vMax: 2.45,
+                wrapU: false,
+                centerZ: (u) => Math.sin(u * 0.62) * 0.68,
+                baseH: (u, v) => {
+                    const av = Math.abs(v);
+                    if (av <= 0.16) return 0.06;
+                    if (av < 0.56) {
+                        const t = (av - 0.16) / 0.40;
+                        // Perfil parabólico suave em U
+                        return 0.06 + (t * t * (3 - 2 * t)) * 0.62;
+                    }
+                    return 0.68;
+                },
+                evalPos: (u, v, h, out) => {
+                    const cz = Math.sin(u * 0.62) * 0.68;
+                    out.set(u, h, cz + v);
+                    return out;
+                },
+                evalNormal: (u, v, out) => {
+                    const av = Math.abs(v);
+                    if (av > 0.16 && av < 0.56) {
+                        const sgn = v >= 0 ? -1 : 1;
+                        out.set(0, 0.55, sgn * 0.83).normalize();
+                    } else {
+                        out.set(0, 1, 0);
+                    }
+                    return out;
+                },
+                worldToUV: (p) => {
+                    const cz = Math.sin(p.x * 0.62) * 0.68;
+                    return { u: p.x, v: p.z - cz };
+                }
+            },
+            {
+                id: 'pipe-bevel',
+                name: '4. Tubulação Biselada (37.5°)',
+                spec: 'União 360° (Use ↻ Tubo) • Ideal 105A',
+                idealAmp: 105,
+                isPipe: true,
+                targetFillThickness: 0.34,
+                grooveHalfWidth: 0.42,
+                uMin: -Math.PI,
+                uMax: Math.PI,
+                vMin: -2.35,
+                vMax: 2.35,
+                wrapU: true,
+                pipeCenterY: 1.55,
+                pipeOuterR: 1.25,
+                baseH: (u, v) => {
+                    const av = Math.abs(v);
+                    const rRoot = 0.88;
+                    const rOuter = 1.25;
+                    if (av <= 0.08) return rRoot;
+                    if (av < 0.42) return rRoot + ((av - 0.08) / 0.34) * (rOuter - rRoot);
+                    return rOuter;
+                },
+                evalPos: (u, v, r, out) => {
+                    // Tubo alinhado no eixo X (v = X ao longo do tubo, u = ângulo circunferencial com 0 no topo +Y)
+                    const cy = 1.55;
+                    out.set(v, cy + Math.cos(u) * r, Math.sin(u) * r);
+                    return out;
+                },
+                evalNormal: (u, v, out) => {
+                    out.set(0, Math.cos(u), Math.sin(u)).normalize();
+                    return out;
+                },
+                worldToUV: (p) => {
+                    const cy = 1.55;
+                    const dy = p.y - cy;
+                    const dz = p.z;
+                    const angle = Math.atan2(dz, dy);
+                    return { u: angle, v: p.x };
+                }
+            }
+        ];
+
+        // =========================================================================
+        // TUTORIAL INTERATIVO (3 PASSOS)
+        // =========================================================================
+        const TUTORIAL_STEPS = [
+            {
+                icon: '🔥',
+                title: '1. Poça de Fusão Viva & Camadas',
+                desc: 'Segure o clique esquerdo (ou toque) sobre o chanfro destacado. O metal fundido permanece amarelo-líquido por ~1,3s: conduza a poça em passe reto ou zigue-zague para fundir as duas paredes sem criar buracos. Faça múltiplas camadas até atingir 100% de volume!'
+            },
+            {
+                icon: '🔨',
+                title: '2. Casca de Escória & Picador',
+                desc: 'Ao solidificar, o cordão é protegido por uma casca vítrea escura. Conforme esfria, a casca contrai e salta em lascas curvas revelando o aço cromado com escamas — ou clique no botão 🔨 Picador para descascar imediatamente antes da próxima camada.'
+            },
+            {
+                icon: '🎥',
+                title: '3. Câmeras Rápidas & Controle Livre',
+                desc: 'Use as teclas 1 a 5 (ou os botões no topo) para alternar ângulos instantaneamente (1 = Topo é o padrão). Use W, A, S, D para mover a visão, Botão Direito para girar livremente e Scroll para dar zoom.'
+            }
+        ];
+        let tutStep = 0;
+
+        function renderTutorialStep() {
+            const step = TUTORIAL_STEPS[tutStep];
+            document.getElementById('tut-step-badge').textContent = `${tutStep + 1} / ${TUTORIAL_STEPS.length}`;
+            document.getElementById('tut-icon').textContent = step.icon;
+            document.getElementById('tut-title').textContent = step.title;
+            document.getElementById('tut-desc').textContent = step.desc;
+            document.getElementById('tut-prev-btn').classList.toggle('hidden', tutStep === 0);
+            document.getElementById('tut-next-btn').textContent = (tutStep === TUTORIAL_STEPS.length - 1) ? 'Começar a Soldar ⚡' : 'Próximo →';
+        }
+        function openTutorial() {
+            tutStep = 0;
+            renderTutorialStep();
+            document.getElementById('tutorial-modal').classList.remove('hidden');
+        }
+        function closeTutorial() {
+            document.getElementById('tutorial-modal').classList.add('hidden');
+            initAudio();
+        }
+        function nextTutorialStep() {
+            if (tutStep < TUTORIAL_STEPS.length - 1) {
+                tutStep++;
+                renderTutorialStep();
+            } else {
+                closeTutorial();
+            }
+        }
+        function prevTutorialStep() {
+            if (tutStep > 0) {
+                tutStep--;
+                renderTutorialStep();
+            }
+        }
+
+        // =========================================================================
+        // INICIALIZAÇÃO THREE.JS, CENA, ILUMINAÇÃO E AMBIENTE
+        // =========================================================================
+        function initThreeJS() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0b0f17);
+            scene.fog = new THREE.FogExp2(0x0b0f17, 0.032);
+
+            camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 100);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.08;
+            container.appendChild(renderer.domElement);
+
+            // Ambiente metálico industrial de alto contraste
+            envMapTexture = createWorkshopEnvironment();
+            scene.environment = envMapTexture;
+
+            // Iluminação de oficina equilibrada
+            const hemiLight = new THREE.HemisphereLight(0xdbeafe, 0x1e293b, 0.55);
+            scene.add(hemiLight);
+
+            const keyLight = new THREE.DirectionalLight(0xfff7ed, 1.15);
+            keyLight.position.set(5.5, 11.5, 6.5);
+            keyLight.castShadow = true;
+            keyLight.shadow.mapSize.width = 2048;
+            keyLight.shadow.mapSize.height = 2048;
+            keyLight.shadow.camera.near = 1;
+            keyLight.shadow.camera.far = 28;
+            keyLight.shadow.camera.left = -7;
+            keyLight.shadow.camera.right = 7;
+            keyLight.shadow.camera.top = 7;
+            keyLight.shadow.camera.bottom = -7;
+            keyLight.shadow.bias = -0.0005;
+            scene.add(keyLight);
+
+            const rimLight = new THREE.DirectionalLight(0x7dd3fc, 0.55);
+            rimLight.position.set(-7, 6, -5);
+            scene.add(rimLight);
+
+            // Luz dinâmica do arco elétrico
+            arcLight = new THREE.PointLight(0x93c5fd, 0, 11, 1.6);
+            scene.add(arcLight);
+
+            // Bancada Industrial
+            const benchGeo = new THREE.PlaneGeometry(36, 36);
+            const benchMat = new THREE.MeshStandardMaterial({
+                color: 0x111827,
+                roughness: 0.78,
+                metalness: 0.25
+            });
+            const bench = new THREE.Mesh(benchGeo, benchMat);
+            bench.rotation.x = -Math.PI / 2;
+            bench.position.y = -0.02;
+            bench.receiveShadow = true;
+            scene.add(bench);
+
+            const gridHelper = new THREE.GridHelper(32, 32, 0x334155, 0x1e293b);
+            gridHelper.position.y = -0.015;
+            scene.add(gridHelper);
+
+            // Grupos de Cena
+            workpieceGroup = new THREE.Group();
+            weldBeadsGroup = new THREE.Group();
+            slagGroup = new THREE.Group();
+            fallingSlagGroup = new THREE.Group();
+            guideGroup = new THREE.Group();
+
+            // Os grupos da peça + solda + escória ficam dentro de workpieceGroup para rotacionar juntos no tubo!
+            workpieceGroup.add(weldBeadsGroup);
+            workpieceGroup.add(slagGroup);
+            workpieceGroup.add(guideGroup);
+
+            scene.add(workpieceGroup);
+            scene.add(fallingSlagGroup);
+
+            raycaster = new THREE.Raycaster();
+            mouseNDC = new THREE.Vector2();
+
+            generateProceduralTextures();
+            initGaussianSplats();
+            buildWeldingTorch();
+            loadStructure(0);
+            setCameraPreset(1);
+
+            setupEventListeners();
+            renderTutorialStep();
+        }
+
+        // =========================================================================
+        // TEXTURAS PBR PROCEDURAIS E AMBIENTE INDUSTRIAL
+        // =========================================================================
+        function createWorkshopEnvironment() {
+            const pmrem = new THREE.PMREMGenerator(renderer);
+            const envScene = new THREE.Scene();
+            envScene.background = new THREE.Color(0x0b0e14);
+
+            // Painéis de luz industrial com alto contraste para reflexos cromados realistas no aço e no cordão
+            const lightPanelMat1 = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const p1 = new THREE.Mesh(new THREE.PlaneGeometry(18, 2.8), lightPanelMat1);
+            p1.position.set(0, 9.5, 2.5);
+            p1.rotation.x = Math.PI / 2;
+            envScene.add(p1);
+
+            const lightPanelMat2 = new THREE.MeshBasicMaterial({ color: 0xffe4c4 });
+            const p2 = new THREE.Mesh(new THREE.PlaneGeometry(14, 2.2), lightPanelMat2);
+            p2.position.set(-9, 6.5, -4);
+            p2.lookAt(0, 0, 0);
+            envScene.add(p2);
+
+            const lightPanelMat3 = new THREE.MeshBasicMaterial({ color: 0xbae6fd });
+            const p3 = new THREE.Mesh(new THREE.PlaneGeometry(12, 2.0), lightPanelMat3);
+            p3.position.set(9, 5.5, 5);
+            p3.lookAt(0, 0, 0);
+            envScene.add(p3);
+
+            const rt = pmrem.fromScene(envScene, 0.035);
+            pmrem.dispose();
+            return rt.texture;
+        }
+
+        function generateProceduralTextures() {
+            // 1. Aço escovado industrial (Albedo + Roughness)
+            const cSteel = document.createElement('canvas');
+            cSteel.width = cSteel.height = 512;
+            const ctxSt = cSteel.getContext('2d');
+            ctxSt.fillStyle = '#5f6b7a';
+            ctxSt.fillRect(0, 0, 512, 512);
+            for (let i = 0; i < 2400; i++) {
+                const y = Math.random() * 512;
+                const shade = 82 + Math.floor(Math.random() * 34);
+                ctxSt.fillStyle = `rgba(${shade}, ${shade + 8}, ${shade + 18}, 0.28)`;
+                ctxSt.fillRect(0, y, 512, 1 + Math.random() * 1.6);
+            }
+            steelPlateTex = new THREE.CanvasTexture(cSteel);
+            steelPlateTex.wrapS = steelPlateTex.wrapT = THREE.RepeatWrapping;
+            steelPlateTex.repeat.set(2, 2);
+
+            const cSRough = document.createElement('canvas');
+            cSRough.width = cSRough.height = 256;
+            const ctxSR = cSRough.getContext('2d');
+            ctxSR.fillStyle = '#787878';
+            ctxSR.fillRect(0, 0, 256, 256);
+            for (let i = 0; i < 1200; i++) {
+                const y = Math.random() * 256;
+                const v = 90 + Math.floor(Math.random() * 75);
+                ctxSR.fillStyle = `rgb(${v},${v},${v})`;
+                ctxSR.fillRect(0, y, 256, 1.5);
+            }
+            steelRoughTex = new THREE.CanvasTexture(cSRough);
+            steelRoughTex.wrapS = steelRoughTex.wrapT = THREE.RepeatWrapping;
+            steelRoughTex.repeat.set(2, 2);
+
+            // 2. Textura 256px da Casca de Escória (vítrea escura, porosa e com micro-fissuras)
+            const cSlag = document.createElement('canvas');
+            cSlag.width = cSlag.height = 256;
+            const ctxS = cSlag.getContext('2d');
+            ctxS.fillStyle = '#241f1c';
+            ctxS.fillRect(0, 0, 256, 256);
+            for (let i = 0; i < 1600; i++) {
+                const px = Math.random() * 256;
+                const py = Math.random() * 256;
+                const r = 0.8 + Math.random() * 3.2;
+                const pick = Math.random();
+                ctxS.fillStyle = pick > 0.68 ? '#3d352e' : (pick > 0.30 ? '#181412' : '#0b0908');
+                ctxS.beginPath();
+                ctxS.arc(px, py, r, 0, Math.PI * 2);
+                ctxS.fill();
+            }
+            ctxS.strokeStyle = 'rgba(8, 6, 5, 0.65)';
+            ctxS.lineWidth = 1.2;
+            for (let i = 0; i < 45; i++) {
+                let x = Math.random() * 256;
+                let y = Math.random() * 256;
+                ctxS.beginPath();
+                ctxS.moveTo(x, y);
+                for (let s = 0; s < 4; s++) {
+                    x += (Math.random() - 0.5) * 28;
+                    y += (Math.random() - 0.5) * 28;
+                    ctxS.lineTo(x, y);
+                }
+                ctxS.stroke();
+            }
+            slagAlbedoTex = new THREE.CanvasTexture(cSlag);
+            slagAlbedoTex.wrapS = slagAlbedoTex.wrapT = THREE.RepeatWrapping;
+            slagBumpTex = slagAlbedoTex;
+        }
+
+        // =========================================================================
+        // SISTEMA DE GAUSSIAN SPLATTING VOLUMÉTRICO (ARCO, PLASMA, FAÍSCAS, FUMAÇA)
+        // =========================================================================
+        function initGaussianSplats() {
+            splatPositions = new Float32Array(MAX_SPLATS * 3);
+            splatColors = new Float32Array(MAX_SPLATS * 3);
+            splatSizes = new Float32Array(MAX_SPLATS);
+            splatOpacities = new Float32Array(MAX_SPLATS);
+
+            for (let i = 0; i < MAX_SPLATS; i++) {
+                splatData.push({
+                    active: false,
+                    vx: 0, vy: 0, vz: 0,
+                    life: 0, maxLife: 1,
+                    baseSize: 0.1,
+                    type: 'spark' // 'arc' | 'spark' | 'smoke'
+                });
+                splatOpacities[i] = 0;
+                splatSizes[i] = 0;
+            }
+
+            splatGeometry = new THREE.BufferGeometry();
+            splatGeometry.setAttribute('position', new THREE.BufferAttribute(splatPositions, 3));
+            splatGeometry.setAttribute('aColor', new THREE.BufferAttribute(splatColors, 3));
+            splatGeometry.setAttribute('aSize', new THREE.BufferAttribute(splatSizes, 1));
+            splatGeometry.setAttribute('aOpacity', new THREE.BufferAttribute(splatOpacities, 1));
+
+            // Shader de Gaussian Splatting com decaimento radial exponencial exp(-k * r^2)
+            splatMaterial = new THREE.ShaderMaterial({
+                transparent: true,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending,
+                uniforms: {
+                    uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) }
+                },
+                vertexShader: `
+                    attribute vec3 aColor;
+                    attribute float aSize;
+                    attribute float aOpacity;
+                    varying vec3 vColor;
+                    varying float vOpacity;
+                    uniform float uPixelRatio;
+                    void main() {
+                        vColor = aColor;
+                        vOpacity = aOpacity;
+                        vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+                        gl_Position = projectionMatrix * mvPos;
+                        gl_PointSize = aSize * uPixelRatio * (340.0 / max(0.4, -mvPos.z));
+                    }
+                `,
+                fragmentShader: `
+                    varying vec3 vColor;
+                    varying float vOpacity;
+                    void main() {
+                        if (vOpacity <= 0.004) discard;
+                        vec2 d = gl_PointCoord - vec2(0.5);
+                        float r2 = dot(d, d);
+                        if (r2 > 0.25) discard;
+                        // Distribuição Gaussiana volumétrica 2D suave
+                        float gauss = exp(-16.0 * r2);
+                        float core = exp(-48.0 * r2);
+                        vec3 col = vColor + vec3(0.45) * core;
+                        gl_FragColor = vec4(col, gauss * vOpacity);
+                    }
+                `
+            });
+
+            splatPoints = new THREE.Points(splatGeometry, splatMaterial);
+            splatPoints.frustumCulled = false;
+            scene.add(splatPoints);
+        }
+
+        function spawnGaussianSplat(pos, vel, colorHex, size, maxLife, type) {
+            const i = splatCursor;
+            splatCursor = (splatCursor + 1) % MAX_SPLATS;
+
+            const d = splatData[i];
+            d.active = true;
+            d.vx = vel.x;
+            d.vy = vel.y;
+            d.vz = vel.z;
+            d.life = 0;
+            d.maxLife = maxLife;
+            d.baseSize = size;
+            d.type = type;
+
+            splatPositions[i * 3] = pos.x;
+            splatPositions[i * 3 + 1] = pos.y;
+            splatPositions[i * 3 + 2] = pos.z;
+
+            const c = new THREE.Color(colorHex);
+            splatColors[i * 3] = c.r;
+            splatColors[i * 3 + 1] = c.g;
+            splatColors[i * 3 + 2] = c.b;
+
+            splatSizes[i] = size;
+            splatOpacities[i] = type === 'smoke' ? 0.16 : 0.92;
+        }
+
+        function updateGaussianSplats(dt) {
+            for (let i = 0; i < MAX_SPLATS; i++) {
+                const d = splatData[i];
+                if (!d.active) continue;
+
+                d.life += dt;
+                if (d.life >= d.maxLife) {
+                    d.active = false;
+                    splatOpacities[i] = 0;
+                    splatSizes[i] = 0;
+                    continue;
+                }
+
+                const t = d.life / d.maxLife;
+                const i3 = i * 3;
+
+                if (d.type === 'spark') {
+                    d.vy -= 9.5 * dt;
+                    splatPositions[i3] += d.vx * dt;
+                    splatPositions[i3 + 1] += d.vy * dt;
+                    splatPositions[i3 + 2] += d.vz * dt;
+                    if (splatPositions[i3 + 1] < 0.02) {
+                        splatPositions[i3 + 1] = 0.02;
+                        d.vy = Math.abs(d.vy) * 0.42;
+                        d.vx *= 0.72;
+                        d.vz *= 0.72;
+                    }
+                    splatSizes[i] = d.baseSize * (1.0 - t * 0.65);
+                    splatOpacities[i] = (1.0 - t) * 0.95;
+                } else if (d.type === 'smoke') {
+                    d.vy += 0.35 * dt;
+                    splatPositions[i3] += d.vx * dt;
+                    splatPositions[i3 + 1] += d.vy * dt;
+                    splatPositions[i3 + 2] += d.vz * dt;
+                    splatSizes[i] = d.baseSize * (1.0 + t * 2.2);
+                    splatOpacities[i] = Math.sin(t * Math.PI) * 0.14;
+                } else {
+                    // Arco elétrico e halo de plasma
+                    splatPositions[i3] += d.vx * dt;
+                    splatPositions[i3 + 1] += d.vy * dt;
+                    splatPositions[i3 + 2] += d.vz * dt;
+                    splatSizes[i] = d.baseSize * (1.0 - t * 0.35);
+                    splatOpacities[i] = (1.0 - t) * 0.95;
+                }
+            }
+
+            splatGeometry.attributes.position.needsUpdate = true;
+            splatGeometry.attributes.aColor.needsUpdate = true;
+            splatGeometry.attributes.aSize.needsUpdate = true;
+            splatGeometry.attributes.aOpacity.needsUpdate = true;
+        }
+
+        // =========================================================================
+        // CONSTRUÇÃO DA TOCHA TIG/MIG ANTICOLISÃO + POÇA DE FUSÃO INDICADORA
+        // =========================================================================
+        function buildWeldingTorch() {
+            torchGroup = new THREE.Group();
+
+            // A origem (0, 0, 0) da tocha é exatamente a ponta do eletrodo de tungstênio!
+            // Tudo é construído ao longo do eixo +Y local para nunca atravessar a peça abaixo.
+            const tipMat = new THREE.MeshStandardMaterial({
+                color: 0xe2e8f0,
+                metalness: 0.95,
+                roughness: 0.2,
+                emissive: 0xffedd5,
+                emissiveIntensity: 0.15
+            });
+            const tipGeo = new THREE.ConeGeometry(0.032, 0.18, 12);
+            tipGeo.rotateX(Math.PI); // Aponta para baixo (origem)
+            const tipMesh = new THREE.Mesh(tipGeo, tipMat);
+            tipMesh.position.y = 0.09;
+            torchGroup.add(tipMesh);
+
+            // Bocal cerâmico rosa TIG (#7)
+            const cupMat = new THREE.MeshStandardMaterial({
+                color: 0xf472b6,
+                roughness: 0.42,
+                metalness: 0.08
+            });
+            const cupGeo = new THREE.CylinderGeometry(0.115, 0.075, 0.44, 18);
+            const cupMesh = new THREE.Mesh(cupGeo, cupMat);
+            cupMesh.position.y = 0.38;
+            torchGroup.add(cupMesh);
+
+            // Corpo metálico / cabeça da tocha
+            const headMat = new THREE.MeshStandardMaterial({
+                color: 0x334155,
+                metalness: 0.72,
+                roughness: 0.35
+            });
+            const headGeo = new THREE.CylinderGeometry(0.125, 0.115, 0.38, 16);
+            const headMesh = new THREE.Mesh(headGeo, headMat);
+            headMesh.position.y = 0.78;
+            torchGroup.add(headMesh);
+
+            // Tampa traseira longa
+            const capMat = new THREE.MeshStandardMaterial({
+                color: 0x1e293b,
+                roughness: 0.5,
+                metalness: 0.2
+            });
+            const capGeo = new THREE.CylinderGeometry(0.085, 0.11, 0.55, 14);
+            const capMesh = new THREE.Mesh(capGeo, capMat);
+            capMesh.position.y = 1.24;
+            torchGroup.add(capMesh);
+
+            // Punho ergonômico inclinado para cima e para a direita (+X, +Y), fora do campo de visão!
+            const handleGroup = new THREE.Group();
+            handleGroup.position.set(0.06, 0.88, 0);
+            handleGroup.rotation.z = -0.95;
+
+            const handleMat = new THREE.MeshStandardMaterial({
+                color: 0x1d4ed8,
+                roughness: 0.65,
+                metalness: 0.12
+            });
+            const handleGeo = new THREE.CylinderGeometry(0.11, 0.13, 1.85, 16);
+            const handleMesh = new THREE.Mesh(handleGeo, handleMat);
+            handleMesh.position.y = 0.92;
+            handleGroup.add(handleMesh);
+
+            torchGroup.add(handleGroup);
+            torchGroup.visible = true;
+            scene.add(torchGroup);
+
+            // Disco luminoso sutil da poça sob o arco (acompanha crescimento gradual quando parado)
+            const puddleGeo = new THREE.CircleGeometry(0.16, 24);
+            puddleGeo.rotateX(-Math.PI / 2);
+            const puddleMat = new THREE.MeshBasicMaterial({
+                color: 0xfef08a,
+                transparent: true,
+                opacity: 0.0,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            });
+            moltenPuddleMesh = new THREE.Mesh(puddleGeo, puddleMat);
+            scene.add(moltenPuddleMesh);
+        }
+
+        function updateTorchPose(worldPos, normal) {
+            if (!torchGroup) return;
+            // Folga real de arco (arc gap) de 4.5cm acima da superfície + inclinação ergonômica segura
+            const safeDir = normal.clone().multiplyScalar(0.82).add(new THREE.Vector3(0.32, 0.55, 0.22)).normalize();
+            torchGroup.position.copy(worldPos).addScaledVector(normal, 0.045);
+
+            const upVec = new THREE.Vector3(0, 1, 0);
+            const quat = new THREE.Quaternion().setFromUnitVectors(upVec, safeDir);
+            torchGroup.quaternion.slerp(quat, 0.35);
+
+            if (moltenPuddleMesh) {
+                moltenPuddleMesh.position.copy(worldPos).addScaledVector(normal, 0.015);
+                moltenPuddleMesh.quaternion.setFromUnitVectors(upVec, normal);
+            }
+        }
+
+        // =========================================================================
+        // CONSTRUÇÃO DAS 4 ESTRUTURAS METÁLICAS E GUIA HOLOGRÁFICO
+        // =========================================================================
+        function clearGroup(grp) {
+            while (grp.children.length > 0) {
+                const obj = grp.children[0];
+                grp.remove(obj);
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) {
+                    if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+                    else obj.material.dispose();
+                }
+            }
+        }
+
+        function loadStructure(index) {
+            currentLevel = (index + STRUCTURES.length) % STRUCTURES.length;
+            const spec = STRUCTURES[currentLevel];
+
+            // Remove peças antigas preservando os subgrupos
+            for (let i = workpieceGroup.children.length - 1; i >= 0; i--) {
+                const child = workpieceGroup.children[i];
+                if (child !== weldBeadsGroup && child !== slagGroup && child !== guideGroup) {
+                    workpieceGroup.remove(child);
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) child.material.dispose();
+                }
+            }
+
+            clearGroup(weldBeadsGroup);
+            clearGroup(slagGroup);
+            clearGroup(fallingSlagGroup);
+            clearGroup(guideGroup);
+
+            slagPatches = [];
+            pendingSlagBox = null;
+            pendingSlagCount = 0;
+            fallingShards = [];
+
+            // Reset de métricas
+            score = 0;
+            combo = 1.0;
+            heatLevel = 0;
+            totalSamplesDeposited = 0;
+            onTargetSamples = 0;
+            burnThroughCount = 0;
+            isWelding = false;
+            lastWeldUV = null;
+            lastWeldWorldPos = null;
+            dwellTime = 0;
+            puddleRadiusFactor = 1.0;
+            motionHistory = [];
+            pipeRollAngle = 0;
+            pipeTargetRollAngle = 0;
+            workpieceGroup.rotation.set(0, 0, 0);
+            workpieceGroup.position.set(0, 0, 0);
+
+            // Ajusta amperagem recomendada
+            amperage = spec.idealAmp;
+            document.getElementById('amp-slider').value = amperage;
+            document.getElementById('amp-val').textContent = `${amperage}A`;
+
+            // Atualiza HUD
+            document.getElementById('level-title').textContent = spec.name;
+            document.getElementById('level-spec').textContent = spec.spec;
+            document.getElementById('rotate-pipe-btn').classList.toggle('hidden', !spec.isPipe);
+
+            const steelMat = new THREE.MeshStandardMaterial({
+                map: steelPlateTex,
+                roughnessMap: steelRoughTex,
+                color: 0x8a99ad,
+                metalness: 0.78,
+                roughness: 0.42,
+                envMapIntensity: 1.05
+            });
+
+            const bevelMat = new THREE.MeshStandardMaterial({
+                color: 0xdbeafe,
+                metalness: 0.90,
+                roughness: 0.22,
+                envMapIntensity: 1.25
+            });
+
+            const backingMat = new THREE.MeshStandardMaterial({
+                color: 0xb45309,
+                metalness: 0.85,
+                roughness: 0.35
+            });
+
+            const plateMeshes = new THREE.Group();
+            plateMeshes.name = 'WorkpiecePlates';
+
+            if (spec.id === 'v-groove') {
+                // Chapa Traseira (-Z) com bisel a 30°
+                const shapeBack = new THREE.Shape();
+                shapeBack.moveTo(0.10, 0);
+                shapeBack.lineTo(0.48, 0.65);
+                shapeBack.lineTo(2.8, 0.65);
+                shapeBack.lineTo(2.8, 0);
+                shapeBack.closePath();
+
+                const extrudeCfg = { depth: 8.6, bevelEnabled: false };
+                const geoBack = new THREE.ExtrudeGeometry(shapeBack, extrudeCfg);
+                geoBack.rotateY(Math.PI / 2);
+                geoBack.translate(-4.3, 0, 0);
+                const plateBack = new THREE.Mesh(geoBack, steelMat);
+                plateBack.receiveShadow = true;
+                plateBack.castShadow = true;
+                plateMeshes.add(plateBack);
+
+                // Chapa Frontal (+Z) espelhada
+                const shapeFront = new THREE.Shape();
+                shapeFront.moveTo(-0.10, 0);
+                shapeFront.lineTo(-0.48, 0.65);
+                shapeFront.lineTo(-2.8, 0.65);
+                shapeFront.lineTo(-2.8, 0);
+                shapeFront.closePath();
+
+                const geoFront = new THREE.ExtrudeGeometry(shapeFront, extrudeCfg);
+                geoFront.rotateY(Math.PI / 2);
+                geoFront.translate(-4.3, 0, 0);
+                const plateFront = new THREE.Mesh(geoFront, steelMat);
+                plateFront.receiveShadow = true;
+                plateFront.castShadow = true;
+                plateMeshes.add(plateFront);
+
+                // Faces usinadas prateadas nos dois biséis do chanfro em V (alinhamento matemático exato, zero camada flutuante)
+                const bevelLen = Math.hypot(0.38, 0.65);
+                const bevelAngle = Math.atan2(0.38, 0.65);
+                const bevelStripGeo = new THREE.PlaneGeometry(8.59, bevelLen);
+
+                const backBevelFace = new THREE.Mesh(bevelStripGeo, bevelMat);
+                backBevelFace.position.set(0, 0.3265, -0.2874);
+                backBevelFace.rotation.set(-bevelAngle, 0, 0);
+                plateMeshes.add(backBevelFace);
+
+                const frontBevelFace = new THREE.Mesh(bevelStripGeo, bevelMat);
+                frontBevelFace.position.set(0, 0.3265, 0.2874);
+                frontBevelFace.rotation.set(bevelAngle, Math.PI, 0);
+                plateMeshes.add(frontBevelFace);
+
+                // Cobre-junta (backing bar) na raiz
+                const backingBar = new THREE.Mesh(new THREE.BoxGeometry(8.62, 0.08, 0.62), backingMat);
+                backingBar.position.set(0, -0.04, 0);
+                backingBar.receiveShadow = true;
+                plateMeshes.add(backingBar);
+
+            } else if (spec.id === 't-fillet') {
+                // Mesa Horizontal
+                const basePlate = new THREE.Mesh(new THREE.BoxGeometry(8.6, 0.25, 4.6), steelMat);
+                basePlate.position.set(0, 0.125, 0.2);
+                basePlate.receiveShadow = true;
+                basePlate.castShadow = true;
+                plateMeshes.add(basePlate);
+
+                // Alma Vertical perpendicular (90°) em z = -0.18 (face frontal exatamente em z = 0)
+                const webPlate = new THREE.Mesh(new THREE.BoxGeometry(8.6, 2.0, 0.36), steelMat);
+                webPlate.position.set(0, 1.25, -0.18);
+                webPlate.receiveShadow = true;
+                webPlate.castShadow = true;
+                plateMeshes.add(webPlate);
+
+                // Faixa usinada na junção interna
+                const stripH = new THREE.Mesh(new THREE.PlaneGeometry(8.58, 0.32), bevelMat);
+                stripH.rotation.x = -Math.PI / 2;
+                stripH.position.set(0, 0.252, 0.16);
+                plateMeshes.add(stripH);
+
+                const stripV = new THREE.Mesh(new THREE.PlaneGeometry(8.58, 0.32), bevelMat);
+                stripV.position.set(0, 0.41, 0.002);
+                plateMeshes.add(stripV);
+
+            } else if (spec.id === 'u-curve') {
+                // Constrói a chapa com chanfro em U curvo usando geometria paramétrica exata (bate 100% com baseH!)
+                const segU = 110;
+                const segV = 54;
+                const pos = [];
+                const uvs = [];
+                const idx = [];
+
+                for (let iu = 0; iu <= segU; iu++) {
+                    const u = THREE.MathUtils.lerp(-4.3, 4.3, iu / segU);
+                    const cz = spec.centerZ(u);
+                    for (let iv = 0; iv <= segV; iv++) {
+                        const v = THREE.MathUtils.lerp(-2.6, 2.6, iv / segV);
+                        const y = spec.baseH(u, v);
+                        pos.push(u, y, cz + v);
+                        uvs.push(iu * 0.08, iv * 0.08);
+                    }
+                }
+                for (let iu = 0; iu < segU; iu++) {
+                    for (let iv = 0; iv < segV; iv++) {
+                        const a = iu * (segV + 1) + iv;
+                        const b = (iu + 1) * (segV + 1) + iv;
+                        const c = iu * (segV + 1) + (iv + 1);
+                        const d = (iu + 1) * (segV + 1) + (iv + 1);
+                        idx.push(a, c, b, b, c, d);
+                    }
+                }
+                const topGeo = new THREE.BufferGeometry();
+                topGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+                topGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+                topGeo.setIndex(idx);
+                topGeo.computeVertexNormals();
+                const topMesh = new THREE.Mesh(topGeo, steelMat);
+                topMesh.receiveShadow = true;
+                topMesh.castShadow = true;
+                plateMeshes.add(topMesh);
+
+                // Bloco sólido base por baixo para dar volume espesso à chapa
+                const subBase = new THREE.Mesh(new THREE.BoxGeometry(8.6, 0.06, 6.2), backingMat);
+                subBase.position.set(0, 0.03, 0);
+                plateMeshes.add(subBase);
+
+            } else if (spec.id === 'pipe-bevel') {
+                // Dois tubos industriais biselados a 37.5° centrados em Y = 1.55, eixo X
+                const cy = spec.pipeCenterY;
+                const rOut = spec.pipeOuterR;
+                const rRoot = 0.88;
+
+                // Tubo Esquerdo (-X)
+                const leftTube = new THREE.Mesh(new THREE.CylinderGeometry(rOut, rOut, 2.15, 48, 1, false), steelMat);
+                leftTube.rotation.z = Math.PI / 2;
+                leftTube.position.set(-1.495, cy, 0);
+                leftTube.receiveShadow = true;
+                leftTube.castShadow = true;
+                plateMeshes.add(leftTube);
+
+                const leftBevel = new THREE.Mesh(new THREE.CylinderGeometry(rRoot, rOut, 0.34, 48), bevelMat);
+                leftBevel.rotation.z = Math.PI / 2;
+                leftBevel.position.set(-0.25, cy, 0);
+                plateMeshes.add(leftBevel);
+
+                // Tubo Direito (+X)
+                const rightTube = new THREE.Mesh(new THREE.CylinderGeometry(rOut, rOut, 2.15, 48, 1, false), steelMat);
+                rightTube.rotation.z = Math.PI / 2;
+                rightTube.position.set(1.495, cy, 0);
+                rightTube.receiveShadow = true;
+                rightTube.castShadow = true;
+                plateMeshes.add(rightTube);
+
+                const rightBevel = new THREE.Mesh(new THREE.CylinderGeometry(rOut, rRoot, 0.34, 48), bevelMat);
+                rightBevel.rotation.z = Math.PI / 2;
+                rightBevel.position.set(0.25, cy, 0);
+                plateMeshes.add(rightBevel);
+
+                // Anel interno de raiz (backing ring)
+                const rootRing = new THREE.Mesh(new THREE.CylinderGeometry(rRoot, rRoot, 0.22, 48), backingMat);
+                rootRing.rotation.z = Math.PI / 2;
+                rootRing.position.set(0, cy, 0);
+                plateMeshes.add(rootRing);
+            }
+
+            workpieceGroup.add(plateMeshes);
+
+            // Constrói o guia holográfico pulsante no chanfro
+            buildGrooveHologram(spec);
+
+            // Inicializa a malha conformal de poça líquida + casca de escória 3D
+            initWeldField(spec);
+
+            // Ajusta o centro da câmera conforme a estrutura
+            camState.desiredTarget.set(0, spec.isPipe ? 1.55 : (spec.id === 't-fillet' ? 0.55 : 0.35), 0);
+            setCameraPreset(camState.preset);
+            updateHUDMetrics();
+        }
+
+        function buildGrooveHologram(spec) {
+            const segU = 72;
+            const segV = 8;
+            const pos = [];
+            const idx = [];
+            const p = new THREE.Vector3();
+            const n = new THREE.Vector3();
+
+            for (let iu = 0; iu <= segU; iu++) {
+                const u = THREE.MathUtils.lerp(spec.uMin, spec.uMax, iu / segU);
+                for (let iv = 0; iv <= segV; iv++) {
+                    const v = THREE.MathUtils.lerp(-spec.grooveHalfWidth * 0.72, spec.grooveHalfWidth * 0.72, iv / segV);
+                    const bh = spec.baseH(u, v);
+                    spec.evalPos(u, v, bh + 0.035, p);
+                    spec.evalNormal(u, v, n);
+                    pos.push(p.x + n.x * 0.015, p.y + n.y * 0.015, p.z + n.z * 0.015);
+                }
+            }
+            for (let iu = 0; iu < segU; iu++) {
+                for (let iv = 0; iv < segV; iv++) {
+                    const a = iu * (segV + 1) + iv;
+                    const b = (iu + 1) * (segV + 1) + iv;
+                    const c = iu * (segV + 1) + (iv + 1);
+                    const d = (iu + 1) * (segV + 1) + (iv + 1);
+                    idx.push(a, c, b, b, c, d);
+                }
+            }
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+            geo.setIndex(idx);
+
+            const mat = new THREE.MeshBasicMaterial({
+                color: 0x38bdf8,
+                transparent: true,
+                opacity: 0.24,
+                side: THREE.DoubleSide,
+                depthWrite: false
+            });
+            guideMesh = new THREE.Mesh(geo, mat);
+            guideGroup.add(guideMesh);
+        }
+
+        // =========================================================================
+        // INICIALIZAÇÃO DA MALHA CONFORMAL DE SOLDA + CASCA DE ESCÓRIA 3D
+        // =========================================================================
+        function initWeldField(spec) {
+            const uTable = new Float32Array(FIELD_NU);
+            const vTable = new Float32Array(FIELD_NV);
+            for (let iu = 0; iu < FIELD_NU; iu++) {
+                uTable[iu] = THREE.MathUtils.lerp(spec.uMin, spec.uMax, iu / (FIELD_NU - 1));
+            }
+            for (let iv = 0; iv < FIELD_NV; iv++) {
+                vTable[iv] = THREE.MathUtils.lerp(spec.vMin, spec.vMax, iv / (FIELD_NV - 1));
+            }
+
+            const baseH = new Float32Array(FIELD_VERTS);
+            const solidH = new Float32Array(FIELD_VERTS);
+            const liquidH = new Float32Array(FIELD_VERTS);
+            const dLiquid = new Float32Array(FIELD_VERTS);
+            const temp = new Float32Array(FIELD_VERTS);
+            const dTemp = new Float32Array(FIELD_VERTS);
+            const ripple = new Float32Array(FIELD_VERTS);
+            const burn = new Float32Array(FIELD_VERTS);
+            const slagCover = new Float32Array(FIELD_VERTS);
+            const wasMolten = new Uint8Array(FIELD_VERTS);
+
+            const positions = new Float32Array(FIELD_VERTS * 3);
+            const normals = new Float32Array(FIELD_VERTS * 3);
+            const colors = new Float32Array(FIELD_VERTS * 3);
+            const emissives = new Float32Array(FIELD_VERTS * 3);
+            const ripplesAttr = new Float32Array(FIELD_VERTS);
+            const uvs = new Float32Array(FIELD_VERTS * 2);
+
+            // Atributos dedicados da Casca de Escória 3D (malha própria que abraça o cordão)
+            const slagPositions = new Float32Array(FIELD_VERTS * 3);
+            const slagNormals = new Float32Array(FIELD_VERTS * 3);
+            const slagAlphas = new Float32Array(FIELD_VERTS);
+            const slagHeats = new Float32Array(FIELD_VERTS);
+
+            const tmpP = new THREE.Vector3();
+            const tmpN = new THREE.Vector3();
+
+            for (let iu = 0; iu < FIELD_NU; iu++) {
+                const u = uTable[iu];
+                for (let iv = 0; iv < FIELD_NV; iv++) {
+                    const v = vTable[iv];
+                    const idx = iu * FIELD_NV + iv;
+                    const bh = spec.baseH(u, v);
+                    baseH[idx] = bh;
+
+                    // Vértices ainda sem solda ficam recolhidos abaixo da chapa (zero z-fighting, pé de solda fundido!)
+                    spec.evalPos(u, v, bh - 0.011, tmpP);
+                    spec.evalNormal(u, v, tmpN);
+
+                    positions[idx * 3] = tmpP.x;
+                    positions[idx * 3 + 1] = tmpP.y;
+                    positions[idx * 3 + 2] = tmpP.z;
+
+                    normals[idx * 3] = tmpN.x;
+                    normals[idx * 3 + 1] = tmpN.y;
+                    normals[idx * 3 + 2] = tmpN.z;
+
+                    slagPositions[idx * 3] = tmpP.x;
+                    slagPositions[idx * 3 + 1] = tmpP.y;
+                    slagPositions[idx * 3 + 2] = tmpP.z;
+
+                    slagNormals[idx * 3] = tmpN.x;
+                    slagNormals[idx * 3 + 1] = tmpN.y;
+                    slagNormals[idx * 3 + 2] = tmpN.z;
+
+                    colors[idx * 3] = 0.62;
+                    colors[idx * 3 + 1] = 0.67;
+                    colors[idx * 3 + 2] = 0.74;
+
+                    uvs[idx * 2] = iu * 0.22;
+                    uvs[idx * 2 + 1] = iv * 0.22;
+                }
+            }
+
+            const indices = [];
+            for (let iu = 0; iu < FIELD_NU - 1; iu++) {
+                for (let iv = 0; iv < FIELD_NV - 1; iv++) {
+                    const a = iu * FIELD_NV + iv;
+                    const b = (iu + 1) * FIELD_NV + iv;
+                    const c = iu * FIELD_NV + (iv + 1);
+                    const d = (iu + 1) * FIELD_NV + (iv + 1);
+                    indices.push(a, c, b, b, c, d);
+                }
+            }
+
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+            geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geo.setAttribute('aEmissive', new THREE.BufferAttribute(emissives, 3));
+            geo.setAttribute('aRipple', new THREE.BufferAttribute(ripplesAttr, 1));
+            geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+            geo.setIndex(indices);
+
+            // Material PBR metálico de competição para o cordão (cromo polido nas cristas + têmpera TIG + brilho de poça)
+            const mat = new THREE.MeshStandardMaterial({
+                vertexColors: true,
+                metalness: 0.90,
+                roughness: 0.26,
+                envMapIntensity: 1.35
+            });
+            mat.onBeforeCompile = (shader) => {
+                shader.vertexShader = shader.vertexShader
+                    .replace(
+                        '#include <common>',
+                        `#include <common>
+                        attribute vec3 aEmissive;
+                        attribute float aRipple;
+                        varying vec3 vCustomEmissive;
+                        varying float vCustomRipple;
+                        varying vec3 vWeldWorldPos;`
+                    )
+                    .replace(
+                        '#include <begin_vertex>',
+                        `#include <begin_vertex>
+                        vCustomEmissive = aEmissive;
+                        vCustomRipple = aRipple;
+                        vWeldWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
+                    );
+                shader.fragmentShader = shader.fragmentShader
+                    .replace(
+                        '#include <common>',
+                        `#include <common>
+                        varying vec3 vCustomEmissive;
+                        varying float vCustomRipple;
+                        varying vec3 vWeldWorldPos;`
+                    )
+                    .replace(
+                        '#include <roughnessmap_fragment>',
+                        `#include <roughnessmap_fragment>
+                        float microGrain = sin(vWeldWorldPos.x * 115.0 + vWeldWorldPos.z * 95.0) * 0.035;
+                        // Cristas das escamas espelhadas (0.14) e vales mais foscos (0.38) para máximo relevo metálico
+                        roughnessFactor = clamp(0.25 - vCustomRipple * 0.11 + microGrain, 0.12, 0.44);`
+                    )
+                    .replace(
+                        '#include <emissivemap_fragment>',
+                        `#include <emissivemap_fragment>
+                        totalEmissiveRadiance += vCustomEmissive;`
+                    );
+            };
+
+            weldSurfaceMesh = new THREE.Mesh(geo, mat);
+            weldSurfaceMesh.receiveShadow = true;
+            weldSurfaceMesh.castShadow = true;
+            weldSurfaceMesh.frustumCulled = false;
+            weldBeadsGroup.add(weldSurfaceMesh);
+
+            // Malha 3D DEDICADA para a Casca de Escória (camada sólida elevada que abraça toda a geometria do cordão!)
+            const slagGeo = new THREE.BufferGeometry();
+            slagGeo.setAttribute('position', new THREE.BufferAttribute(slagPositions, 3));
+            slagGeo.setAttribute('normal', new THREE.BufferAttribute(slagNormals, 3));
+            slagGeo.setAttribute('aSlagAlpha', new THREE.BufferAttribute(slagAlphas, 1));
+            slagGeo.setAttribute('aSlagHeat', new THREE.BufferAttribute(slagHeats, 1));
+            slagGeo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+            slagGeo.setIndex(indices);
+
+            const slagMat = new THREE.MeshStandardMaterial({
+                map: slagAlbedoTex,
+                bumpMap: slagBumpTex,
+                bumpScale: 0.028,
+                color: 0x3b342e,
+                metalness: 0.16,
+                roughness: 0.62,
+                side: THREE.DoubleSide
+            });
+            slagMat.onBeforeCompile = (shader) => {
+                shader.vertexShader = shader.vertexShader
+                    .replace(
+                        '#include <common>',
+                        `#include <common>
+                        attribute float aSlagAlpha;
+                        attribute float aSlagHeat;
+                        varying float vSlagAlpha;
+                        varying float vSlagHeat;
+                        varying vec3 vSlagWorldPos;`
+                    )
+                    .replace(
+                        '#include <begin_vertex>',
+                        `#include <begin_vertex>
+                        vSlagAlpha = aSlagAlpha;
+                        vSlagHeat = aSlagHeat;
+                        vSlagWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
+                    );
+                shader.fragmentShader = shader.fragmentShader
+                    .replace(
+                        '#include <common>',
+                        `#include <common>
+                        varying float vSlagAlpha;
+                        varying float vSlagHeat;
+                        varying vec3 vSlagWorldPos;`
+                    )
+                    .replace(
+                        '#include <clipping_planes_fragment>',
+                        `#include <clipping_planes_fragment>
+                        // Borda fraturada orgânica de casca vítrea (elimina aspecto quadriculado)
+                        float edgeFracture = sin(vSlagWorldPos.x * 24.0 + cos(vSlagWorldPos.z * 21.0)) * 0.13
+                                           + cos(vSlagWorldPos.z * 29.0 - sin(vSlagWorldPos.y * 23.0)) * 0.09;
+                        float slagMask = vSlagAlpha + edgeFracture;
+                        if (slagMask < 0.44) discard;`
+                    )
+                    .replace(
+                        '#include <emissivemap_fragment>',
+                        `#include <emissivemap_fragment>
+                        // Fissuras incandescentes sutis na borda da casca enquanto ainda está quente
+                        float rimCrack = smoothstep(0.44, 0.50, slagMask) * (1.0 - smoothstep(0.50, 0.64, slagMask));
+                        totalEmissiveRadiance += vec3(1.35, 0.36, 0.05) * pow(vSlagHeat, 1.5) * (0.35 + rimCrack * 1.45);`
+                    );
+            };
+
+            slagShellMesh = new THREE.Mesh(slagGeo, slagMat);
+            slagShellMesh.receiveShadow = true;
+            slagShellMesh.castShadow = true;
+            slagShellMesh.frustumCulled = false;
+            slagGroup.add(slagShellMesh);
+
+            weldField = {
+                spec, uTable, vTable,
+                baseH, solidH, liquidH, dLiquid, temp, dTemp, ripple, burn, slagCover, wasMolten,
+                geo, positions, normals, colors, emissives, ripplesAttr,
+                slagGeo, slagPositions, slagNormals, slagAlphas, slagHeats,
+                activeMinU: FIELD_NU, activeMaxU: -1,
+                activeMinV: FIELD_NV, activeMaxV: -1
+            };
+        }
+
+        // =========================================================================
+        // SIMULAÇÃO FÍSICA: INJEÇÃO DE CALOR/METAL + ESCOAMENTO LÍQUIDO + ESCAMAS
+        // =========================================================================
+        function uvToGridIndices(u, v) {
+            const f = weldField;
+            const s = f.spec;
+            let fu = (u - s.uMin) / (s.uMax - s.uMin);
+            if (s.wrapU) {
+                fu = ((fu % 1) + 1) % 1;
+            } else {
+                fu = THREE.MathUtils.clamp(fu, 0, 1);
+            }
+            const fv = THREE.MathUtils.clamp((v - s.vMin) / (s.vMax - s.vMin), 0, 1);
+            return {
+                iu: Math.round(fu * (FIELD_NU - 1)),
+                iv: Math.round(fv * (FIELD_NV - 1))
+            };
+        }
+
+        function stepWeldPhysics(dt) {
+            const f = weldField;
+            if (!f) return;
+            const s = f.spec;
+
+            // 1. Se o jogador está soldando, injeta energia térmica e metal líquido ao longo do traço contínuo
+            if (isWelding && aimUV.valid) {
+                const curU = aimUV.u;
+                const curV = aimUV.v;
+
+                // Calcula velocidade real em unidades do mundo
+                const worldDist = lastWeldWorldPos ? filteredAimPos.distanceTo(lastWeldWorldPos) : 0;
+                const instSpeed = dt > 0.0001 ? worldDist / dt : 0;
+                weldSpeedSmooth = THREE.MathUtils.lerp(weldSpeedSmooth, instSpeed, Math.min(1, dt * 10));
+
+                // Crescimento gradual da poça quando a tocha fica parada
+                if (weldSpeedSmooth < 0.35) {
+                    dwellTime = Math.min(2.6, dwellTime + dt);
+                } else {
+                    dwellTime = Math.max(0, dwellTime - dt * 2.2);
+                }
+                puddleRadiusFactor = THREE.MathUtils.lerp(puddleRadiusFactor, 1.0 + dwellTime * 0.24, Math.min(1, dt * 5));
+
+                // Fase de solidificação para desenhar as escamas conforme avanço da mão + tempo
+                solidificationPhase += dt * 16.5 + worldDist * 20.0;
+
+                // Análise automática de técnica (Passe Reto vs Zigue-Zague)
+                updateTechniqueDetector(curU, curV);
+
+                // Calibração por amperagem
+                const ampRatio = amperage / s.idealAmp;
+                const baseRadiusU = (s.isPipe ? 0.145 : 0.175) * Math.sqrt(ampRatio) * puddleRadiusFactor;
+                const baseRadiusV = 0.185 * Math.sqrt(ampRatio) * puddleRadiusFactor;
+
+                // Interpola sub-passos entre o ponto anterior e o atual para nunca picotar em movimentos rápidos
+                const steps = lastWeldUV ? Math.max(1, Math.min(10, Math.ceil(worldDist / 0.065))) : 1;
+                const prevU = lastWeldUV ? lastWeldUV.u : curU;
+                const prevV = lastWeldUV ? lastWeldUV.v : curV;
+                const dtSub = dt / steps;
+
+                // Ajuste de taxa de deposição (3 a 4 passes completos para preencher o chanfro!)
+                const speedPenalty = weldSpeedSmooth > 3.6 ? 0.42 : (weldSpeedSmooth < 0.25 ? 1.15 : 1.0);
+                const depositRate = 0.34 * ampRatio * speedPenalty;
+                const heatInputRate = 3.15 * ampRatio;
+
+                for (let st = 1; st <= steps; st++) {
+                    const alpha = st / steps;
+                    let su = THREE.MathUtils.lerp(prevU, curU, alpha);
+                    // Trata embrulho angular na tubulação
+                    if (s.wrapU && Math.abs(curU - prevU) > Math.PI) {
+                        const diff = curU - prevU;
+                        const shortest = diff > 0 ? diff - Math.PI * 2 : diff + Math.PI * 2;
+                        su = prevU + shortest * alpha;
+                        if (su > Math.PI) su -= Math.PI * 2;
+                        if (su < -Math.PI) su += Math.PI * 2;
+                    }
+                    const sv = THREE.MathUtils.lerp(prevV, curV, alpha);
+
+                    const g = uvToGridIndices(su, sv);
+                    const radCellsU = Math.ceil((baseRadiusU / (s.uMax - s.uMin)) * FIELD_NU) + 2;
+                    const radCellsV = Math.ceil((baseRadiusV / (s.vMax - s.vMin)) * FIELD_NV) + 2;
+
+                    const iv0 = Math.max(1, g.iv - radCellsV);
+                    const iv1 = Math.min(FIELD_NV - 2, g.iv + radCellsV);
+
+                    for (let du = -radCellsU; du <= radCellsU; du++) {
+                        let iu = g.iu + du;
+                        if (s.wrapU) {
+                            iu = ((iu % (FIELD_NU - 1)) + (FIELD_NU - 1)) % (FIELD_NU - 1);
+                        } else if (iu < 1 || iu >= FIELD_NU - 1) {
+                            continue;
+                        }
+
+                        const uCell = f.uTable[iu];
+                        let distU = uCell - su;
+                        if (s.wrapU) {
+                            if (distU > Math.PI) distU -= Math.PI * 2;
+                            if (distU < -Math.PI) distU += Math.PI * 2;
+                        }
+                        const normU = distU / baseRadiusU;
+                        const nU2 = normU * normU;
+                        if (nU2 > 2.2) continue;
+
+                        const row = iu * FIELD_NV;
+                        for (let iv = iv0; iv <= iv1; iv++) {
+                            const vCell = f.vTable[iv];
+                            const normV = (vCell - sv) / baseRadiusV;
+                            const r2 = nU2 + normV * normV;
+                            if (r2 > 2.2) continue;
+
+                            const idx = row + iv;
+                            const gHeat = Math.exp(-r2 * 1.85);
+                            const gMass = Math.exp(-r2 * 2.45);
+
+                            // Aquece a poça acima de T_MELT (amarelo-líquido)
+                            f.temp[idx] = Math.min(1.48, f.temp[idx] + gHeat * heatInputRate * dtSub);
+
+                            // Se passar o arco por cima de escória antiga, o arco funde/limpa a escória naquela região
+                            if (gHeat > 0.42 && f.slagCover[idx] > 0) {
+                                f.slagCover[idx] = Math.max(0, f.slagCover[idx] - dtSub * 4.5);
+                            }
+
+                            // Se a região atingir fusão, re-liquefaz levemente a crosta superior para fundir camadas sem montanhas!
+                            if (f.temp[idx] >= T_MELT) {
+                                f.wasMolten[idx] = 1;
+                                const remelt = Math.min(f.solidH[idx], 0.08 * dtSub * gHeat);
+                                f.solidH[idx] -= remelt;
+                                f.liquidH[idx] += remelt;
+
+                                // Limite elegante de altura por camada (evita montanhas destroçadas ao passar por cima)
+                                const totalMetal = f.solidH[idx] + f.liquidH[idx];
+                                const maxCap = Math.abs(vCell) <= s.grooveHalfWidth ? (s.targetFillThickness * 1.48) : 0.24;
+                                if (totalMetal < maxCap) {
+                                    const capSoft = THREE.MathUtils.clamp((maxCap - totalMetal) / 0.14, 0.12, 1.0);
+                                    f.liquidH[idx] += gMass * depositRate * dtSub * capSoft;
+                                }
+                            }
+
+                            // Marca dano térmico se superaquecer muito
+                            if (heatLevel > 88 && gHeat > 0.55) {
+                                f.burn[idx] = Math.min(1.0, f.burn[idx] + dtSub * 0.9);
+                            }
+                        }
+
+                        // Expande caixa ativa de atualização
+                        f.activeMinU = Math.min(f.activeMinU, Math.max(0, iu - 2));
+                        f.activeMaxU = Math.max(f.activeMaxU, Math.min(FIELD_NU - 1, iu + 2));
+                    }
+                    f.activeMinV = Math.min(f.activeMinV, Math.max(0, iv0 - 2));
+                    f.activeMaxV = Math.max(f.activeMaxV, Math.min(FIELD_NV - 1, iv1 + 2));
+                }
+
+                // Pontuação, Calor Global e Feedback de Velocidade
+                const inGroove = Math.abs(curV) <= s.grooveHalfWidth * 1.08;
+                totalSamplesDeposited += dt * 20;
+                if (inGroove) onTargetSamples += dt * 20;
+
+                const speedHeatMult = weldSpeedSmooth < 0.45 ? 1.55 : (weldSpeedSmooth > 3.2 ? 0.65 : 1.0);
+                heatLevel = THREE.MathUtils.clamp(heatLevel + (12.5 * ampRatio * speedHeatMult - 7.2) * dt, 0, 100);
+
+                if (heatLevel >= 98) {
+                    burnThroughCount += dt * 4;
+                    combo = 1.0;
+                    showLiveFeedback('⚠️ SUPERAQUECIMENTO! Mova a tocha mais rápido!', 'text-red-400');
+                } else if (inGroove && weldSpeedSmooth >= 0.42 && weldSpeedSmooth <= 3.1) {
+                    combo = Math.min(3.0, combo + dt * 0.16);
+                    score += Math.round(18 * combo * dt * 10);
+                } else if (!inGroove) {
+                    combo = Math.max(1.0, combo - dt * 0.6);
+                }
+
+                // Emite Gaussian Splats do arco elétrico, faíscas e fumaça
+                emitArcSplats(filteredAimPos, aimNormal);
+
+                // Atualiza status de velocidade na HUD
+                updateSpeedIndicator(weldSpeedSmooth, true);
+
+                lastWeldUV = { u: curU, v: curV };
+                if (!lastWeldWorldPos) lastWeldWorldPos = filteredAimPos.clone();
+                else lastWeldWorldPos.copy(filteredAimPos);
+            } else {
+                // Resfriamento global do medidor de calor quando arco está desligado
+                heatLevel = Math.max(0, heatLevel - dt * 18);
+                dwellTime = Math.max(0, dwellTime - dt * 3);
+                puddleRadiusFactor = THREE.MathUtils.lerp(puddleRadiusFactor, 1.0, dt * 6);
+                updateSpeedIndicator(0, false);
+                lastWeldUV = null;
+                lastWeldWorldPos = null;
+            }
+
+            // 2. Evolução Contínua da Poça Líquida (Tensão Superficial + Gravidade + Resfriamento + Solidificação)
+            if (f.activeMaxU >= f.activeMinU && f.activeMaxV >= f.activeMinV) {
+                const iu0 = Math.max(1, f.activeMinU);
+                const iu1 = Math.min(FIELD_NU - 2, f.activeMaxU);
+                const iv0 = Math.max(1, f.activeMinV);
+                const iv1 = Math.min(FIELD_NV - 2, f.activeMaxV);
+
+                // Zera buffers diferenciais na região ativa
+                for (let iu = iu0; iu <= iu1; iu++) {
+                    const row = iu * FIELD_NV;
+                    for (let iv = iv0; iv <= iv1; iv++) {
+                        f.dLiquid[row + iv] = 0;
+                        f.dTemp[row + iv] = 0;
+                    }
+                }
+
+                // Escoamento da poça líquida (tensão superficial nivela o cordão e une paredes do chanfro sem degraus!)
+                const flowRate = 6.2 * dt;
+                const thermalDiff = 1.65 * dt;
+
+                for (let iu = iu0; iu <= iu1; iu++) {
+                    const row = iu * FIELD_NV;
+                    const rowPrev = (iu - 1) * FIELD_NV;
+                    const rowNext = (iu + 1) * FIELD_NV;
+
+                    for (let iv = iv0; iv <= iv1; iv++) {
+                        const idx = row + iv;
+                        const T = f.temp[idx];
+                        const liq = f.liquidH[idx];
+
+                        if (T > 0.04) {
+                            const avgT = (f.temp[rowPrev + iv] + f.temp[rowNext + iv] + f.temp[idx - 1] + f.temp[idx + 1]) * 0.25;
+                            f.dTemp[idx] += (avgT - T) * thermalDiff;
+                        }
+
+                        if (liq > 0.0005 && T >= T_MELT * 0.92) {
+                            // Altura total da superfície livre (baseH + solidH + liquidH)
+                            const hC = f.baseH[idx] + f.solidH[idx] + liq;
+                            const nIdx0 = rowPrev + iv;
+                            const nIdx1 = rowNext + iv;
+                            const nIdx2 = idx - 1;
+                            const nIdx3 = idx + 1;
+
+                            const h0 = f.baseH[nIdx0] + f.solidH[nIdx0] + f.liquidH[nIdx0];
+                            const h1 = f.baseH[nIdx1] + f.solidH[nIdx1] + f.liquidH[nIdx1];
+                            const h2 = f.baseH[nIdx2] + f.solidH[nIdx2] + f.liquidH[nIdx2];
+                            const h3 = f.baseH[nIdx3] + f.solidH[nIdx3] + f.liquidH[nIdx3];
+
+                            // Escoa somente para vizinhos quentes ou mais baixos (mantém poça coesa com menisco natural)
+                            const maxOut = liq * 0.20;
+                            const pushNeighbor = (nIdx, hN) => {
+                                const dh = hC - hN;
+                                if (dh > 0.006) {
+                                    const mob = f.temp[nIdx] > 0.35 ? 1.0 : 0.32;
+                                    const flux = Math.min(maxOut, dh * flowRate * mob);
+                                    f.dLiquid[idx] -= flux;
+                                    f.dLiquid[nIdx] += flux;
+                                }
+                            };
+                            pushNeighbor(nIdx0, h0);
+                            pushNeighbor(nIdx1, h1);
+                            pushNeighbor(nIdx2, h2);
+                            pushNeighbor(nIdx3, h3);
+                        }
+                    }
+                }
+
+                // Integra temperatura, resfriamento e solidificação com registro de escamas + casca de escória
+                let stillWarm = false;
+                for (let iu = iu0; iu <= iu1; iu++) {
+                    const row = iu * FIELD_NV;
+                    for (let iv = iv0; iv <= iv1; iv++) {
+                        const idx = row + iv;
+
+                        let liq = Math.max(0, f.liquidH[idx] + f.dLiquid[idx]);
+                        // Resfriamento realista (~1.3s em estado líquido amarelo-dourado)
+                        let T = Math.max(0, f.temp[idx] + f.dTemp[idx] - (0.34 + f.temp[idx] * 0.24) * dt);
+
+                        if (T > 0.06 || liq > 0.0005) stillWarm = true;
+
+                        // Borda traseira da poça solidifica quando cai abaixo de T_MELT
+                        if (T < T_MELT && liq > 0.0001) {
+                            const freezeAmt = Math.min(liq, liq * Math.min(1, dt * 6.5) + 0.012 * dt);
+                            liq -= freezeAmt;
+                            f.solidH[idx] += freezeAmt;
+
+                            if (f.wasMolten[idx] === 1 && f.solidH[idx] > 0.014) {
+                                f.wasMolten[idx] = 0;
+                                // Grava a crista/vale da escama acompanhando a curva exata da poça nesse instante!
+                                const wave = Math.sin(solidificationPhase);
+                                f.ripple[idx] = THREE.MathUtils.clamp(f.ripple[idx] * 0.22 + wave * 0.95, -1.0, 1.0);
+
+                                // Forma casca de escória 3D contínua sobre todo o cordão recém-solidificado
+                                if (f.solidH[idx] > 0.018 && f.burn[idx] < 0.65) {
+                                    f.slagCover[idx] = 1.0;
+                                    registerSolidifiedSlagCell(iu, iv);
+                                }
+                            }
+                        }
+
+                        f.liquidH[idx] = liq;
+                        f.temp[idx] = T;
+                    }
+                }
+
+                refreshWeldMeshRegion(
+                    Math.max(0, iu0 - 1),
+                    Math.min(FIELD_NU - 1, iu1 + 1),
+                    Math.max(0, iv0 - 1),
+                    Math.min(FIELD_NV - 1, iv1 + 1)
+                );
+
+                // Se tudo já esfriou completamente, recolhe a janela ativa para economizar CPU
+                if (!stillWarm && !isWelding) {
+                    f.activeMinU = FIELD_NU;
+                    f.activeMaxU = -1;
+                    f.activeMinV = FIELD_NV;
+                    f.activeMaxV = -1;
+                }
+            }
+        }
+
+        // Atualiza geometria 3D, relevo de escamas, cor metálica TIG/MIG, brilho de corpo negro e casca 3D na malha
+        function refreshWeldMeshRegion(iuMin, iuMax, ivMin, ivMax) {
+            const f = weldField;
+            const s = f.spec;
+            const tmpP = new THREE.Vector3();
+            const tmpSlagP = new THREE.Vector3();
+
+            // Se tubulação (wrapU), garante que a costura final (FIELD_NU - 1) copie a coluna 0
+            const syncSeam = s.wrapU;
+            const uEndPos = syncSeam ? FIELD_NU - 1 : iuMax;
+            const uStartPos = syncSeam ? 0 : iuMin;
+
+            // 1. Atualiza posições 3D do cordão metálico + casca de escória elevada + cores PBR
+            for (let iu = uStartPos; iu <= uEndPos; iu++) {
+                const srcIu = (syncSeam && iu === FIELD_NU - 1) ? 0 : iu;
+                const u = f.uTable[iu];
+                const dstRow = iu * FIELD_NV;
+                const srcRow = srcIu * FIELD_NV;
+
+                for (let iv = ivMin; iv <= ivMax; iv++) {
+                    const dstIdx = dstRow + iv;
+                    const srcIdx = srcRow + iv;
+                    const v = f.vTable[iv];
+
+                    const metal = f.solidH[srcIdx] + f.liquidH[srcIdx];
+                    const T = f.temp[srcIdx];
+                    const rip = f.ripple[srcIdx];
+                    const slag = f.slagCover[srcIdx];
+                    const brn = f.burn[srcIdx];
+
+                    // Transição suave no pé da solda (toe) para zero costura sobre o aço base
+                    let hSurf;
+                    if (metal <= 0.0025) {
+                        hSurf = f.baseH[srcIdx] - 0.011;
+                    } else {
+                        const blendIn = Math.min(1.0, (metal - 0.0025) / 0.014);
+                        // Relevo físico pronunciado das escamas para capturar reflexos metálicos nítidos
+                        const rippleBump = rip * Math.min(0.022, metal * 0.28);
+                        hSurf = f.baseH[srcIdx] + THREE.MathUtils.lerp(-0.011, metal + rippleBump, blendIn);
+                    }
+
+                    s.evalPos(u, v, hSurf, tmpP);
+                    f.positions[dstIdx * 3] = tmpP.x;
+                    f.positions[dstIdx * 3 + 1] = tmpP.y;
+                    f.positions[dstIdx * 3 + 2] = tmpP.z;
+
+                    // Posição da Casca de Escória 3D (abraça o cordão +2.1cm acima do metal, com textura de relevo natural)
+                    const activeSlag = (T >= T_MELT || metal <= 0.012) ? 0.0 : slag;
+                    const slagLift = activeSlag > 0.01 ? (0.021 + rip * 0.004) : -0.008;
+                    s.evalPos(u, v, hSurf + slagLift, tmpSlagP);
+                    f.slagPositions[dstIdx * 3] = tmpSlagP.x;
+                    f.slagPositions[dstIdx * 3 + 1] = tmpSlagP.y;
+                    f.slagPositions[dstIdx * 3 + 2] = tmpSlagP.z;
+                    f.slagAlphas[dstIdx] = activeSlag;
+                    f.slagHeats[dstIdx] = activeSlag > 0.01 ? THREE.MathUtils.clamp((T - 0.16) / (T_MELT - 0.16), 0, 1) : 0;
+
+                    // Albedo PBR Metálico Realista: aço cromado com têmpera TIG (azul-aço -> violeta -> bronze -> prata)
+                    let r, g, b;
+                    if (metal > 0.0025) {
+                        const crown = Math.min(1.0, metal / 0.095);
+                        if (crown < 0.28) {
+                            // Borda ZAC azul-aço -> violeta de têmpera térmica
+                            const t = crown / 0.28;
+                            r = THREE.MathUtils.lerp(0.28, 0.54, t);
+                            g = THREE.MathUtils.lerp(0.35, 0.43, t);
+                            b = THREE.MathUtils.lerp(0.52, 0.58, t);
+                        } else if (crown < 0.58) {
+                            // Transição violeta -> dourado bronze quente
+                            const t = (crown - 0.28) / 0.30;
+                            r = THREE.MathUtils.lerp(0.54, 0.74, t);
+                            g = THREE.MathUtils.lerp(0.43, 0.62, t);
+                            b = THREE.MathUtils.lerp(0.58, 0.44, t);
+                        } else {
+                            // Bronze -> aço cromado prateado nítido (sem estourar para branco leitoso)
+                            const t = (crown - 0.58) / 0.42;
+                            r = THREE.MathUtils.lerp(0.74, 0.72, t);
+                            g = THREE.MathUtils.lerp(0.62, 0.77, t);
+                            b = THREE.MathUtils.lerp(0.44, 0.83, t);
+                        }
+
+                        // Contraste pronunciado entre vales escuros e cristas brilhantes das escamas
+                        const ripShade = 0.94 + rip * 0.22;
+                        r *= ripShade;
+                        g *= ripShade;
+                        b *= ripShade;
+
+                        // Dano por superaquecimento (oxidação cinza-escura)
+                        if (brn > 0.01) {
+                            r = THREE.MathUtils.lerp(r, 0.18, brn * 0.82);
+                            g = THREE.MathUtils.lerp(g, 0.18, brn * 0.82);
+                            b = THREE.MathUtils.lerp(b, 0.21, brn * 0.82);
+                        }
+                    } else {
+                        r = 0.44; g = 0.49; b = 0.56;
+                    }
+
+                    f.colors[dstIdx * 3] = THREE.MathUtils.clamp(r, 0, 1);
+                    f.colors[dstIdx * 3 + 1] = THREE.MathUtils.clamp(g, 0, 1);
+                    f.colors[dstIdx * 3 + 2] = THREE.MathUtils.clamp(b, 0, 1);
+                    f.ripplesAttr[dstIdx] = rip;
+
+                    // Emissivo de Corpo Negro + Poça Líquida Amarela Brilhante!
+                    let er = 0, eg = 0, eb = 0;
+                    if (T > 0.18 && metal > 0.002) {
+                        if (T >= T_MELT) {
+                            // POÇA DE FUSÃO LÍQUIDA (amarelo-dourado -> branco incandescente no centro)
+                            const pT = THREE.MathUtils.clamp((T - T_MELT) / 0.75, 0, 1);
+                            er = THREE.MathUtils.lerp(1.45, 2.35, pT);
+                            eg = THREE.MathUtils.lerp(0.88, 2.05, pT);
+                            eb = THREE.MathUtils.lerp(0.14, 1.15, pT * pT);
+                        } else {
+                            // Resfriamento laranja vivo -> vermelho cereja -> apagado
+                            const cT = (T - 0.18) / (T_MELT - 0.18);
+                            er = Math.pow(cT, 1.25) * 1.35;
+                            eg = Math.pow(cT, 2.4) * 0.60;
+                            eb = Math.pow(cT, 4.0) * 0.09;
+                        }
+                    }
+                    f.emissives[dstIdx * 3] = er;
+                    f.emissives[dstIdx * 3 + 1] = eg;
+                    f.emissives[dstIdx * 3 + 2] = eb;
+                }
+            }
+
+            // 2. Recalcula normais suaves por diferenças centrais (escamas 3D reais + casca de escória refletem a oficina!)
+            const nuNorm0 = Math.max(1, uStartPos);
+            const nuNorm1 = Math.min(FIELD_NU - 2, uEndPos);
+            const nvNorm0 = Math.max(1, ivMin);
+            const nvNorm1 = Math.min(FIELD_NV - 2, ivMax);
+            const P = f.positions;
+            const N = f.normals;
+            const SN = f.slagNormals;
+
+            for (let iu = nuNorm0; iu <= nuNorm1; iu++) {
+                const row = iu * FIELD_NV;
+                const rowPrev = (iu - 1) * FIELD_NV;
+                const rowNext = (iu + 1) * FIELD_NV;
+                for (let iv = nvNorm0; iv <= nvNorm1; iv++) {
+                    const idx = row + iv;
+                    const iU0 = (rowPrev + iv) * 3;
+                    const iU1 = (rowNext + iv) * 3;
+                    const iV0 = (row + iv - 1) * 3;
+                    const iV1 = (row + iv + 1) * 3;
+
+                    const dUx = P[iU1] - P[iU0];
+                    const dUy = P[iU1 + 1] - P[iU0 + 1];
+                    const dUz = P[iU1 + 2] - P[iU0 + 2];
+
+                    const dVx = P[iV1] - P[iV0];
+                    const dVy = P[iV1 + 1] - P[iV0 + 1];
+                    const dVz = P[iV1 + 2] - P[iV0 + 2];
+
+                    // dV × dU aponta sempre para o lado externo em todas as 4 estruturas!
+                    let nx = dVy * dUz - dVz * dUy;
+                    let ny = dVz * dUx - dVx * dUz;
+                    let nz = dVx * dUy - dVy * dUx;
+                    const len = Math.hypot(nx, ny, nz) || 1.0;
+
+                    const fnx = nx / len;
+                    const fny = ny / len;
+                    const fnz = nz / len;
+
+                    N[idx * 3] = fnx;
+                    N[idx * 3 + 1] = fny;
+                    N[idx * 3 + 2] = fnz;
+
+                    SN[idx * 3] = fnx;
+                    SN[idx * 3 + 1] = fny;
+                    SN[idx * 3 + 2] = fnz;
+                }
+            }
+
+            f.geo.attributes.position.needsUpdate = true;
+            f.geo.attributes.normal.needsUpdate = true;
+            f.geo.attributes.color.needsUpdate = true;
+            f.geo.attributes.aEmissive.needsUpdate = true;
+            f.geo.attributes.aRipple.needsUpdate = true;
+
+            f.slagGeo.attributes.position.needsUpdate = true;
+            f.slagGeo.attributes.normal.needsUpdate = true;
+            f.slagGeo.attributes.aSlagAlpha.needsUpdate = true;
+            f.slagGeo.attributes.aSlagHeat.needsUpdate = true;
+        }
+
+        // =========================================================================
+        // CASCA DE ESCÓRIA: FORMAÇÃO EM PLACAS CURVAS E DESCASCAMENTO 3D REAL
+        // =========================================================================
+        function registerSolidifiedSlagCell(iu, iv) {
+            if (!pendingSlagBox) {
+                pendingSlagBox = { uMin: iu, uMax: iu, vMin: iv, vMax: iv };
+                pendingSlagCount = 1;
+            } else {
+                pendingSlagBox.uMin = Math.min(pendingSlagBox.uMin, iu);
+                pendingSlagBox.uMax = Math.max(pendingSlagBox.uMax, iu);
+                pendingSlagBox.vMin = Math.min(pendingSlagBox.vMin, iv);
+                pendingSlagBox.vMax = Math.max(pendingSlagBox.vMax, iv);
+                pendingSlagCount++;
+            }
+            if (pendingSlagCount >= 52) {
+                flushPendingSlagPatch();
+            }
+        }
+
+        function flushPendingSlagPatch() {
+            if (!pendingSlagBox || pendingSlagCount < 8) {
+                pendingSlagBox = null;
+                pendingSlagCount = 0;
+                return;
+            }
+            slagPatches.push({
+                uMin: Math.max(1, pendingSlagBox.uMin - 1),
+                uMax: Math.min(FIELD_NU - 2, pendingSlagBox.uMax + 1),
+                vMin: Math.max(1, pendingSlagBox.vMin - 1),
+                vMax: Math.min(FIELD_NV - 2, pendingSlagBox.vMax + 1),
+                age: 0,
+                popDelay: 5.2 + Math.random() * 4.2
+            });
+            pendingSlagBox = null;
+            pendingSlagCount = 0;
+        }
+
+        // Recorta a própria geometria curva (u, v) da casca de escória para saltar em lasca real (ZERO quadrados!)
+        function popSlagPatch(patch, manualChip) {
+            const f = weldField;
+            if (!f) return;
+
+            const u0 = Math.max(1, patch.uMin);
+            const u1 = Math.min(FIELD_NU - 2, patch.uMax);
+            const v0 = Math.max(1, patch.vMin);
+            const v1 = Math.min(FIELD_NV - 2, patch.vMax);
+
+            const activeQuads = [];
+            const vertSet = new Map();
+            const vertList = [];
+            const center = new THREE.Vector3();
+
+            const getLocalVert = (iu, iv) => {
+                const key = iu * FIELD_NV + iv;
+                if (vertSet.has(key)) return vertSet.get(key);
+                const localId = vertList.length;
+                vertSet.set(key, localId);
+                vertList.push({ iu, iv, key });
+                center.x += f.slagPositions[key * 3];
+                center.y += f.slagPositions[key * 3 + 1];
+                center.z += f.slagPositions[key * 3 + 2];
+                return localId;
+            };
+
+            for (let iu = u0; iu < u1; iu++) {
+                for (let iv = v0; iv < v1; iv++) {
+                    const k00 = iu * FIELD_NV + iv;
+                    const k10 = (iu + 1) * FIELD_NV + iv;
+                    const k01 = iu * FIELD_NV + (iv + 1);
+                    const k11 = (iu + 1) * FIELD_NV + (iv + 1);
+
+                    const cov = (f.slagCover[k00] + f.slagCover[k10] + f.slagCover[k01] + f.slagCover[k11]) * 0.25;
+                    const met = (f.solidH[k00] + f.solidH[k10] + f.solidH[k01] + f.solidH[k11]) * 0.25;
+                    if (cov > 0.35 && met > 0.012) {
+                        const a = getLocalVert(iu, iv);
+                        const b = getLocalVert(iu + 1, iv);
+                        const c = getLocalVert(iu, iv + 1);
+                        const d = getLocalVert(iu + 1, iv + 1);
+                        activeQuads.push(a, c, b, b, c, d);
+                    }
+                }
+            }
+
+            let clearedAny = false;
+            for (let iu = u0; iu <= u1; iu++) {
+                const row = iu * FIELD_NV;
+                for (let iv = v0; iv <= v1; iv++) {
+                    const idx = row + iv;
+                    if (f.slagCover[idx] > 0.05) {
+                        f.slagCover[idx] = 0;
+                        clearedAny = true;
+                    }
+                }
+            }
+            if (!clearedAny) return;
+
+            refreshWeldMeshRegion(Math.max(0, u0 - 1), Math.min(FIELD_NU - 1, u1 + 1), Math.max(0, v0 - 1), Math.min(FIELD_NV - 1, v1 + 1));
+
+            if (activeQuads.length === 0 || vertList.length < 4) return;
+            center.divideScalar(vertList.length);
+
+            const uMid = f.uTable[Math.round((u0 + u1) * 0.5)];
+            const vMid = f.vTable[Math.round((v0 + v1) * 0.5)];
+            const normal = new THREE.Vector3();
+            f.spec.evalNormal(uMid, vMid, normal);
+
+            const shardPos = new Float32Array(vertList.length * 3);
+            const shardUV = new Float32Array(vertList.length * 2);
+
+            for (let i = 0; i < vertList.length; i++) {
+                const vInfo = vertList[i];
+                const k3 = vInfo.key * 3;
+                const lx = f.slagPositions[k3] - center.x;
+                const ly = f.slagPositions[k3 + 1] - center.y;
+                const lz = f.slagPositions[k3 + 2] - center.z;
+
+                const dist2 = lx * lx + ly * ly + lz * lz;
+                const curl = Math.min(0.055, dist2 * 0.14);
+
+                shardPos[i * 3] = lx + normal.x * curl;
+                shardPos[i * 3 + 1] = ly + normal.y * curl;
+                shardPos[i * 3 + 2] = lz + normal.z * curl;
+
+                shardUV[i * 2] = vInfo.iu * 0.22;
+                shardUV[i * 2 + 1] = vInfo.iv * 0.22;
+            }
+
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(shardPos, 3));
+            geo.setAttribute('uv', new THREE.BufferAttribute(shardUV, 2));
+            geo.setIndex(activeQuads);
+            geo.computeVertexNormals();
+
+            const mat = new THREE.MeshStandardMaterial({
+                map: slagAlbedoTex,
+                bumpMap: slagBumpTex,
+                bumpScale: 0.025,
+                color: 0x3b342e,
+                metalness: 0.16,
+                roughness: 0.65,
+                side: THREE.DoubleSide
+            });
+
+            // Converte centro e normal para coordenadas do mundo caso a peça (tubo) esteja rotacionada
+            const worldCenter = center.clone().applyMatrix4(workpieceGroup.matrixWorld);
+            const worldNormal = normal.clone().transformDirection(workpieceGroup.matrixWorld).normalize();
+
+            const shard = new THREE.Mesh(geo, mat);
+            shard.quaternion.copy(workpieceGroup.quaternion);
+            shard.position.copy(worldCenter).addScaledVector(worldNormal, 0.018);
+            fallingSlagGroup.add(shard);
+
+            const boost = manualChip ? 1.4 : 0.95;
+            const vel = new THREE.Vector3(
+                (Math.random() - 0.5) * 1.9 * boost,
+                (1.4 + Math.random() * 1.5) * boost,
+                (Math.random() - 0.5) * 1.9 * boost
+            ).addScaledVector(worldNormal, 0.85 * boost);
+
+            fallingShards.push({
+                mesh: shard,
+                vel: vel,
+                rotVel: new THREE.Vector3(
+                    (Math.random() - 0.5) * 8.5,
+                    (Math.random() - 0.5) * 8.5,
+                    (Math.random() - 0.5) * 8.5
+                ),
+                life: 3.2
+            });
+        }
+
+        function chipAllSlag() {
+            initAudio();
+            flushPendingSlagPatch();
+            let chipped = 0;
+
+            while (slagPatches.length > 0) {
+                const p = slagPatches.pop();
+                popSlagPatch(p, true);
+                chipped++;
+            }
+
+            // Garante limpeza de qualquer resíduo restante de casca na malha
+            const f = weldField;
+            if (f) {
+                let anyLeft = false;
+                for (let i = 0; i < FIELD_VERTS; i++) {
+                    if (f.slagCover[i] > 0.02 && f.temp[i] < T_MELT) {
+                        f.slagCover[i] = 0;
+                        anyLeft = true;
+                    }
+                }
+                if (anyLeft) {
+                    refreshWeldMeshRegion(0, FIELD_NU - 1, 0, FIELD_NV - 1);
+                    chipped++;
+                }
+            }
+
+            if (chipped > 0) {
+                playChippingHammerSound();
+                showLiveFeedback('🔨 Casca de escória removida! Cordão revelado.', 'text-amber-300');
+            } else {
+                showLiveFeedback('Nenhuma escória fria para remover.', 'text-slate-300');
+            }
+        }
+
+        // =========================================================================
+        // EMISSÃO DE SPLATS DO ARCO & DETECTOR DE TÉCNICA
+        // =========================================================================
+        function emitArcSplats(pos, normal) {
+            // 1. Núcleo do arco elétrico azul-branco
+            const arcPos = pos.clone().addScaledVector(normal, 0.045);
+            spawnGaussianSplat(arcPos, new THREE.Vector3(0, 0.05, 0), 0xe0f2fe, 0.42, 0.06, 'arc');
+            spawnGaussianSplat(arcPos, new THREE.Vector3((Math.random() - 0.5) * 0.2, 0.1, (Math.random() - 0.5) * 0.2), 0x38bdf8, 0.72, 0.09, 'arc');
+
+            // 2. Faíscas incandescentes com gravidade
+            const sparkCount = amperage > 135 ? 4 : 2;
+            for (let i = 0; i < sparkCount; i++) {
+                const v = new THREE.Vector3(
+                    (Math.random() - 0.5) * 4.8,
+                    1.6 + Math.random() * 3.8,
+                    (Math.random() - 0.5) * 4.8
+                ).addScaledVector(normal, 1.5);
+                const col = Math.random() > 0.35 ? 0xfbbf24 : 0xfef08a;
+                spawnGaussianSplat(arcPos, v, col, 0.11 + Math.random() * 0.08, 0.35 + Math.random() * 0.45, 'spark');
+            }
+
+            // 3. Fumaça volumétrica suave
+            if (Math.random() < 0.38) {
+                const sv = new THREE.Vector3((Math.random() - 0.5) * 0.45, 0.75 + Math.random() * 0.5, (Math.random() - 0.5) * 0.45);
+                spawnGaussianSplat(arcPos, sv, 0x94a3b8, 0.45 + Math.random() * 0.35, 1.2 + Math.random() * 0.9, 'smoke');
+            }
+        }
+
+        function updateTechniqueDetector(u, v) {
+            const now = performance.now();
+            motionHistory.push({ u, v, t: now });
+            while (motionHistory.length > 0 && now - motionHistory[0].t > 950) {
+                motionHistory.shift();
+            }
+
+            const dot = document.getElementById('tech-dot');
+            const label = document.getElementById('detected-tech-label');
+
+            if (dwellTime > 0.55) {
+                detectedTech = 'Poça Parada';
+                dot.className = 'w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_#fbbf24] shrink-0';
+                label.textContent = 'Poça Parada';
+                return;
+            }
+
+            if (motionHistory.length >= 8) {
+                let minV = Infinity, maxV = -Infinity;
+                let flips = 0;
+                let prevDir = 0;
+                for (let i = 1; i < motionHistory.length; i++) {
+                    const dv = motionHistory[i].v - motionHistory[i - 1].v;
+                    minV = Math.min(minV, motionHistory[i].v);
+                    maxV = Math.max(maxV, motionHistory[i].v);
+                    if (Math.abs(dv) > 0.025) {
+                        const dir = Math.sign(dv);
+                        if (prevDir !== 0 && dir !== prevDir) flips++;
+                        prevDir = dir;
+                    }
+                }
+                const spanV = maxV - minV;
+                if (spanV > 0.22 && flips >= 1) {
+                    detectedTech = 'Tecimento (Zigue-Zague)';
+                    dot.className = 'w-2 h-2 rounded-full bg-violet-400 shadow-[0_0_8px_#a78bfa] shrink-0';
+                    label.textContent = 'Zigue-Zague';
+                    return;
+                }
+            }
+
+            detectedTech = 'Passe Reto';
+            dot.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] shrink-0';
+            label.textContent = 'Passe Reto';
+        }
+
+        // =========================================================================
+        // RAYCASTING CONFORMAL DA MIRA (ZERO PERDA ENTRE FACES E ÂNGULOS)
+        // =========================================================================
+        function updateAimFromPointer(clientX, clientY) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouseNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+            mouseNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(mouseNDC, camera);
+
+            // Intersecta as chapas reais da estrutura (ignora casca e guia para nunca pular sobre escória!)
+            const targets = [];
+            workpieceGroup.children.forEach(c => {
+                if (c.name === 'WorkpiecePlates') targets.push(c);
+            });
+            if (weldSurfaceMesh) targets.push(weldSurfaceMesh);
+
+            const hits = raycaster.intersectObjects(targets, true);
+            if (hits.length > 0) {
+                const hit = hits[0];
+                const spec = STRUCTURES[currentLevel];
+
+                // Converte o ponto de impacto para o espaço local de workpieceGroup (fundamental para o tubo rotacionado!)
+                const localPt = workpieceGroup.worldToLocal(hit.point.clone());
+                const uv = spec.worldToUV(localPt);
+
+                // Verifica se está dentro dos limites úteis da peça
+                const inBounds = (spec.wrapU || (uv.u >= spec.uMin && uv.u <= spec.uMax)) &&
+                                 (uv.v >= spec.vMin && uv.v <= spec.vMax);
+
+                if (inBounds && weldField) {
+                    const g = uvToGridIndices(uv.u, uv.v);
+                    const idx = g.iu * FIELD_NV + g.iv;
+                    const surfH = weldField.baseH[idx] + weldField.solidH[idx] + weldField.liquidH[idx];
+
+                    const exactLocalPos = new THREE.Vector3();
+                    const exactLocalNorm = new THREE.Vector3();
+                    spec.evalPos(uv.u, uv.v, surfH, exactLocalPos);
+                    spec.evalNormal(uv.u, uv.v, exactLocalNorm);
+
+                    aimWorldPos.copy(exactLocalPos).applyMatrix4(workpieceGroup.matrixWorld);
+                    aimNormal.copy(exactLocalNorm).transformDirection(workpieceGroup.matrixWorld).normalize();
+                    aimUV = { u: uv.u, v: uv.v, valid: true };
+                    hasValidAim = true;
+                    return;
+                }
+            }
+            aimUV.valid = false;
+        }
+
+        // =========================================================================
+        // CONTROLE DE CÂMERA (PRESETS 1-5 COM PADRÃO 1=TOPO + WASD + ORBIT + ZOOM)
+        // =========================================================================
+        function setCameraPreset(num) {
+            camState.preset = num;
+            const spec = STRUCTURES[currentLevel];
+            const centerY = spec.isPipe ? 1.55 : (spec.id === 't-fillet' ? 0.55 : 0.35);
+            camState.desiredTarget.set(0, centerY, 0);
+
+            if (num === 1) {
+                // 1: TOPO (Padrão inicial limpo e direto sobre o chanfro!)
+                camState.theta = 0.0;
+                camState.phi = spec.id === 't-fillet' ? 0.58 : 0.14;
+                camState.radius = spec.isPipe ? 6.4 : 7.5;
+            } else if (num === 2) {
+                // 2: 3/4 Bancada Industrial
+                camState.theta = 0.38;
+                camState.phi = 0.78;
+                camState.radius = 7.4;
+            } else if (num === 3) {
+                // 3: Close-Up na Raiz
+                camState.theta = 0.18;
+                camState.phi = 0.52;
+                camState.radius = 4.2;
+            } else if (num === 4) {
+                // 4: Perfil Lateral
+                camState.theta = Math.PI * 0.48;
+                camState.phi = 0.85;
+                camState.radius = 6.8;
+            } else if (num === 5) {
+                // 5: Alinhamento Frontal (olhando por dentro do chanfro)
+                camState.theta = -Math.PI * 0.48;
+                camState.phi = 1.05;
+                camState.radius = 6.2;
+            }
+
+            // Atualiza destaque visual dos botões 1-5
+            document.querySelectorAll('.cam-preset-btn').forEach(btn => {
+                btn.className = 'cam-preset-btn btn-glow w-7 h-7 rounded-xl text-xs font-industrial font-bold bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700';
+            });
+            const activeBtn = document.getElementById(`cam-btn-${num}`);
+            if (activeBtn) {
+                activeBtn.className = 'cam-preset-btn btn-glow w-7 h-7 rounded-xl text-xs font-industrial font-bold bg-amber-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.4)]';
+            }
+        }
+
+        function resetCameraView() {
+            setCameraPreset(camState.preset);
+            showLiveFeedback('🎯 Câmera centralizada', 'text-sky-300');
+        }
+
+        function updateCameraTransform(dt) {
+            // Pan suave via WASD / Setas relativo à direção da câmera
+            const panSpeed = 4.6 * dt * (camState.radius / 7.0);
+            const forward = new THREE.Vector3(-Math.sin(camState.theta), 0, -Math.cos(camState.theta));
+            const right = new THREE.Vector3(Math.cos(camState.theta), 0, -Math.sin(camState.theta));
+
+            if (keysPressed.w || keysPressed.up) camState.desiredTarget.addScaledVector(forward, panSpeed);
+            if (keysPressed.s || keysPressed.down) camState.desiredTarget.addScaledVector(forward, -panSpeed);
+            if (keysPressed.d || keysPressed.right) camState.desiredTarget.addScaledVector(right, panSpeed);
+            if (keysPressed.a || keysPressed.left) camState.desiredTarget.addScaledVector(right, -panSpeed);
+
+            // Limites da bancada
+            camState.desiredTarget.x = THREE.MathUtils.clamp(camState.desiredTarget.x, -5.5, 5.5);
+            camState.desiredTarget.z = THREE.MathUtils.clamp(camState.desiredTarget.z, -4.0, 4.0);
+
+            camState.target.lerp(camState.desiredTarget, Math.min(1, dt * 10));
+
+            const sinPhi = Math.sin(camState.phi);
+            const cosPhi = Math.cos(camState.phi);
+            const x = camState.target.x + camState.radius * sinPhi * Math.sin(camState.theta);
+            const y = camState.target.y + camState.radius * cosPhi;
+            const z = camState.target.z + camState.radius * sinPhi * Math.cos(camState.theta);
+
+            camera.position.set(x, Math.max(0.25, y), z);
+            camera.lookAt(camState.target);
+        }
+
+        // =========================================================================
+        // EVENTOS DE MOUSE, TOQUE E TECLADO
+        // =========================================================================
+        function setupEventListeners() {
+            const dom = renderer.domElement;
+
+            dom.addEventListener('contextmenu', e => e.preventDefault());
+
+            dom.addEventListener('pointerdown', (e) => {
+                initAudio();
+                if (e.button === 2) {
+                    // Botão Direito: Girar câmera livremente
+                    isOrbiting = true;
+                    orbitLastX = e.clientX;
+                    orbitLastY = e.clientY;
+                    return;
+                }
+                if (e.button === 0) {
+                    pointerActive = true;
+                    updateAimFromPointer(e.clientX, e.clientY);
+                    if (aimUV.valid) {
+                        filteredAimPos.copy(aimWorldPos);
+                        isWelding = true;
+                        setArcSoundActive(true);
+                    }
+                }
+            });
+
+            window.addEventListener('pointermove', (e) => {
+                if (isOrbiting) {
+                    const dx = e.clientX - orbitLastX;
+                    const dy = e.clientY - orbitLastY;
+                    orbitLastX = e.clientX;
+                    orbitLastY = e.clientY;
+                    camState.theta -= dx * 0.0065;
+                    camState.phi = THREE.MathUtils.clamp(camState.phi - dy * 0.0055, 0.08, 1.48);
+                    return;
+                }
+
+                updateAimFromPointer(e.clientX, e.clientY);
+                if (pointerActive && aimUV.valid && !isWelding) {
+                    filteredAimPos.copy(aimWorldPos);
+                    isWelding = true;
+                    setArcSoundActive(true);
+                }
+            });
+
+            window.addEventListener('pointerup', (e) => {
+                if (e.button === 2) {
+                    isOrbiting = false;
+                    return;
+                }
+                if (pointerActive) {
+                    pointerActive = false;
+                    isWelding = false;
+                    setArcSoundActive(false);
+                    flushPendingSlagPatch();
+                }
+            });
+
+            dom.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                camState.radius = THREE.MathUtils.clamp(camState.radius + e.deltaY * 0.0045, 2.4, 14.5);
+            }, { passive: false });
+
+            window.addEventListener('keydown', (e) => {
+                const k = e.key.toLowerCase();
+                if (k === '1') setCameraPreset(1);
+                else if (k === '2') setCameraPreset(2);
+                else if (k === '3') setCameraPreset(3);
+                else if (k === '4') setCameraPreset(4);
+                else if (k === '5') setCameraPreset(5);
+                else if (k === 'w') keysPressed.w = true;
+                else if (k === 'a') keysPressed.a = true;
+                else if (k === 's') keysPressed.s = true;
+                else if (k === 'd') keysPressed.d = true;
+                else if (e.key === 'ArrowUp') keysPressed.up = true;
+                else if (e.key === 'ArrowDown') keysPressed.down = true;
+                else if (e.key === 'ArrowLeft') keysPressed.left = true;
+                else if (e.key === 'ArrowRight') keysPressed.right = true;
+            });
+
+            window.addEventListener('keyup', (e) => {
+                const k = e.key.toLowerCase();
+                if (k === 'w') keysPressed.w = false;
+                else if (k === 'a') keysPressed.a = false;
+                else if (k === 's') keysPressed.s = false;
+                else if (k === 'd') keysPressed.d = false;
+                else if (e.key === 'ArrowUp') keysPressed.up = false;
+                else if (e.key === 'ArrowDown') keysPressed.down = false;
+                else if (e.key === 'ArrowLeft') keysPressed.left = false;
+                else if (e.key === 'ArrowRight') keysPressed.right = false;
+            });
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        // =========================================================================
+        // ÁUDIO SINTETIZADO WEB AUDIO API (ZERO URLS EXTERNAS)
+        // =========================================================================
+        function initAudio() {
+            try {
+                if (audioCtx) {
+                    if (audioCtx.state === 'suspended') audioCtx.resume();
+                    return;
+                }
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContextClass) return;
+                audioCtx = new AudioContextClass();
+
+                // Buffer de ruído branco para crepitação do arco elétrico
+                const bufferSize = audioCtx.sampleRate * 2;
+                const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const output = noiseBuffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    output[i] = (Math.random() * 2 - 1) * (Math.random() > 0.72 ? 1.0 : 0.35);
+                }
+
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = noiseBuffer;
+                noise.loop = true;
+
+                arcFilterNode = audioCtx.createBiquadFilter();
+                arcFilterNode.type = 'bandpass';
+                arcFilterNode.frequency.value = 1450;
+                arcFilterNode.Q.value = 0.85;
+
+                // Zumbido de transformador 120Hz
+                arcOscNode = audioCtx.createOscillator();
+                arcOscNode.type = 'sawtooth';
+                arcOscNode.frequency.value = 120;
+                const humGain = audioCtx.createGain();
+                humGain.gain.value = 0.08;
+
+                arcGainNode = audioCtx.createGain();
+                arcGainNode.gain.value = 0.0;
+
+                noise.connect(arcFilterNode);
+                arcFilterNode.connect(arcGainNode);
+                arcOscNode.connect(humGain);
+                humGain.connect(arcGainNode);
+                arcGainNode.connect(audioCtx.destination);
+
+                noise.start();
+                arcOscNode.start();
+            } catch (err) {
+                // Silencia caso navegador bloqueie áudio
+            }
+        }
+
+        function setArcSoundActive(active) {
+            if (!audioCtx || !arcGainNode) return;
+            const now = audioCtx.currentTime;
+            const targetVol = (active && soundEnabled) ? THREE.MathUtils.clamp((amperage / 140) * 0.16, 0.06, 0.22) : 0.0;
+            arcGainNode.gain.setTargetAtTime(targetVol, now, 0.03);
+        }
+
+        function playSlagPopTick() {
+            if (!audioCtx || !soundEnabled) return;
+            try {
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(1600 + Math.random() * 900, now);
+                osc.frequency.exponentialRampToValueAtTime(320, now + 0.045);
+                gain.gain.setValueAtTime(0.08, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.055);
+            } catch (e) {}
+        }
+
+        function playChippingHammerSound() {
+            if (!audioCtx || !soundEnabled) return;
+            try {
+                const now = audioCtx.currentTime;
+                [0, 0.075, 0.16].forEach((delay, idx) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(1950 + idx * 240, now + delay);
+                    osc.frequency.exponentialRampToValueAtTime(680, now + delay + 0.09);
+                    gain.gain.setValueAtTime(0.11, now + delay);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.1);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now + delay);
+                    osc.stop(now + delay + 0.11);
+                });
+            } catch (e) {}
+        }
+
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            document.getElementById('sound-btn').textContent = soundEnabled ? '🔊' : '🔇';
+            if (!soundEnabled) setArcSoundActive(false);
+        }
+
+        // =========================================================================
+        // MÉTRICAS DE VOLUME, HUD E INSPEÇÃO TÉCNICA
+        // =========================================================================
+        function computeGrooveVolumePercent() {
+            const f = weldField;
+            if (!f) return 0;
+            const s = f.spec;
+            let sumRatio = 0;
+            let count = 0;
+
+            for (let iu = 4; iu < FIELD_NU - 4; iu += 2) {
+                const row = iu * FIELD_NV;
+                for (let iv = 2; iv < FIELD_NV - 2; iv++) {
+                    const v = f.vTable[iv];
+                    if (Math.abs(v) <= s.grooveHalfWidth * 0.78) {
+                        const metal = f.solidH[row + iv] + f.liquidH[row + iv];
+                        sumRatio += Math.min(1.0, metal / s.targetFillThickness);
+                        count++;
+                    }
+                }
+            }
+            if (count === 0) return 0;
+            return Math.min(100, Math.round((sumRatio / count) * 100));
+        }
+
+        function updateHUDMetrics() {
+            const vol = computeGrooveVolumePercent();
+            document.getElementById('volume-pct').textContent = `${vol}%`;
+            document.getElementById('volume-bar').style.width = `${vol}%`;
+
+            document.getElementById('score-val').textContent = score.toLocaleString('pt-BR');
+            document.getElementById('combo-val').textContent = `${combo.toFixed(1)}x`;
+
+            const hPct = Math.round(heatLevel);
+            document.getElementById('heat-pct').textContent = `${hPct}%`;
+            document.getElementById('heat-bar').style.width = `${hPct}%`;
+
+            // Atenua o guia holográfico conforme o chanfro é preenchido
+            if (guideMesh) {
+                const baseOp = Math.max(0.0, (1.0 - vol / 85) * 0.24);
+                guideMesh.material.opacity = baseOp * (0.72 + Math.sin(guideUniformTime * 3.5) * 0.28);
+            }
+        }
+
+        function updateSpeedIndicator(speed, active) {
+            const el = document.getElementById('speed-status');
+            if (!active) {
+                el.textContent = 'PRONTO';
+                el.className = 'hidden sm:inline-block min-w-[68px] text-center text-[11px] font-industrial font-bold text-slate-300 bg-slate-800/80 px-2 py-0.5 rounded-lg';
+                return;
+            }
+            if (speed < 0.35) {
+                el.textContent = 'DEVAGAR';
+                el.className = 'hidden sm:inline-block min-w-[68px] text-center text-[11px] font-industrial font-bold text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded-lg';
+            } else if (speed > 3.2) {
+                el.textContent = 'RÁPIDO';
+                el.className = 'hidden sm:inline-block min-w-[68px] text-center text-[11px] font-industrial font-bold text-rose-300 bg-rose-500/20 px-2 py-0.5 rounded-lg';
+            } else {
+                el.textContent = 'IDEAL';
+                el.className = 'hidden sm:inline-block min-w-[68px] text-center text-[11px] font-industrial font-bold text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded-lg';
+            }
+        }
+
+        function showLiveFeedback(msg, colorClass) {
+            const el = document.getElementById('live-feedback');
+            el.textContent = msg;
+            el.className = `fixed top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none text-xs font-industrial font-bold tracking-wider px-3.5 py-1.5 rounded-full glass-hud feedback-toast ${colorClass || 'text-white'}`;
+            clearTimeout(feedbackTimer);
+            feedbackTimer = setTimeout(() => {
+                el.classList.remove('feedback-toast');
+                el.style.opacity = '0';
+            }, 2100);
+        }
+
+        function onAmpChange(val) {
+            amperage = parseInt(val, 10);
+            document.getElementById('amp-val').textContent = `${amperage}A`;
+        }
+
+        function rotateWorkpiece() {
+            if (!STRUCTURES[currentLevel].isPipe) return;
+            pipeTargetRollAngle += Math.PI / 4; // +45°
+            showLiveFeedback('↻ Tubulação rotacionada (+45°)', 'text-sky-300');
+        }
+
+        function cycleStructure() {
+            loadStructure(currentLevel + 1);
+            showLiveFeedback(`⚙️ ${STRUCTURES[currentLevel].name}`, 'text-amber-300');
+        }
+
+        function resetLevel() {
+            loadStructure(currentLevel);
+            showLiveFeedback('Peça limpa e pronta para nova soldagem!', 'text-slate-200');
+        }
+
+        function inspectWeld() {
+            isWelding = false;
+            setArcSoundActive(false);
+
+            const vol = computeGrooveVolumePercent();
+            const prec = totalSamplesDeposited > 2 ? Math.round((onTargetSamples / totalSamplesDeposited) * 100) : 0;
+            const thermal = Math.max(0, Math.round(100 - burnThroughCount * 14));
+            const grade = Math.round(vol * 0.50 + prec * 0.30 + thermal * 0.20);
+
+            document.getElementById('insp-vol').textContent = `${vol}%`;
+            document.getElementById('insp-prec').textContent = `${prec}%`;
+            document.getElementById('insp-heat').textContent = `${thermal}%`;
+            document.getElementById('insp-grade').textContent = `${grade}%`;
+
+            const badge = document.getElementById('insp-badge');
+            const comment = document.getElementById('insp-comment');
+            if (grade >= 80) {
+                badge.textContent = 'APROVADO • PADRÃO ASME';
+                badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-industrial font-bold bg-emerald-500/20 text-emerald-300';
+                comment.textContent = 'Excelente fusão nas paredes do chanfro, escamas regulares e ótimo controle térmico!';
+            } else if (grade >= 55) {
+                badge.textContent = 'ACEITÁVEL • REFORÇAR';
+                badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-industrial font-bold bg-amber-500/20 text-amber-300';
+                comment.textContent = 'Boa base, mas o chanfro precisa de mais camadas de preenchimento ou melhor centralização.';
+            } else {
+                badge.textContent = 'REPROVADO • FALTA DE FUSÃO';
+                badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-industrial font-bold bg-rose-500/20 text-rose-300';
+                comment.textContent = 'Preenchimento insuficiente ou excesso de superaquecimento. Use o Picador entre passes e preencha todo o chanfro.';
+            }
+
+            document.getElementById('inspect-modal').classList.remove('hidden');
+        }
+
+        function closeInspectAndRetry() {
+            document.getElementById('inspect-modal').classList.add('hidden');
+            resetLevel();
+        }
+
+        function nextStructure() {
+            document.getElementById('inspect-modal').classList.add('hidden');
+            loadStructure(currentLevel + 1);
+        }
+
+        // =========================================================================
+        // LOOP PRINCIPAL DE ANIMAÇÃO (60 FPS)
+        // =========================================================================
+        let hudRefreshAccum = 0;
+
+        function animate(timestamp) {
+            requestAnimationFrame(animate);
+
+            const now = timestamp || performance.now();
+            const dt = Math.min(0.05, Math.max(0.001, (now - lastFrameTime) / 1000));
+            lastFrameTime = now;
+            guideUniformTime += dt;
+
+            // 1. Rotação suave da tubulação (Nível 4) em torno do eixo central do tubo (Y = 1.55)
+            const spec = STRUCTURES[currentLevel];
+            if (spec.isPipe && Math.abs(pipeTargetRollAngle - pipeRollAngle) > 0.001) {
+                pipeRollAngle = THREE.MathUtils.lerp(pipeRollAngle, pipeTargetRollAngle, Math.min(1, dt * 8));
+                const cy = spec.pipeCenterY;
+                workpieceGroup.rotation.x = pipeRollAngle;
+                workpieceGroup.position.set(0, cy - Math.cos(pipeRollAngle) * cy, -Math.sin(pipeRollAngle) * cy);
+                workpieceGroup.updateMatrixWorld(true);
+            }
+
+            // 2. Câmera interativa + filtragem suave da tocha
+            updateCameraTransform(dt);
+
+            if (hasValidAim) {
+                filteredAimPos.lerp(aimWorldPos, Math.min(1, dt * 26));
+                updateTorchPose(filteredAimPos, aimNormal);
+            }
+
+            // 3. Física contínua da poça de fusão, brilho do arco e filtro de máscara
+            stepWeldPhysics(dt);
+
+            const maskEl = document.getElementById('mask-overlay');
+            if (isWelding && aimUV.valid) {
+                arcLight.position.copy(filteredAimPos).addScaledVector(aimNormal, 0.25);
+                arcLight.intensity = 2.6 + Math.random() * 1.4;
+                if (moltenPuddleMesh) {
+                    moltenPuddleMesh.material.opacity = 0.55;
+                    const sScale = 0.85 * puddleRadiusFactor;
+                    moltenPuddleMesh.scale.set(sScale, sScale, sScale);
+                }
+                if (maskEl) maskEl.style.backgroundColor = 'rgba(2, 30, 20, 0.16)';
+            } else {
+                arcLight.intensity = Math.max(0, arcLight.intensity - dt * 24);
+                if (moltenPuddleMesh) {
+                    moltenPuddleMesh.material.opacity = Math.max(0, moltenPuddleMesh.material.opacity - dt * 4);
+                }
+                if (maskEl) maskEl.style.backgroundColor = 'rgba(2, 35, 25, 0)';
+            }
+
+            // 4. Escória resfriando, rachando e saltando sozinha da malha somente após esfriar
+            for (let i = slagPatches.length - 1; i >= 0; i--) {
+                const p = slagPatches[i];
+                const f = weldField;
+                const cIdx = Math.round((p.uMin + p.uMax) * 0.5) * FIELD_NV + Math.round((p.vMin + p.vMax) * 0.5);
+                if (f && f.temp[cIdx] < 0.48) {
+                    p.age += dt;
+                }
+                if (p.age >= p.popDelay) {
+                    slagPatches.splice(i, 1);
+                    popSlagPatch(p, false);
+                    playSlagPopTick();
+                }
+            }
+
+            // 5. Física dos fragmentos 3D curvos da casca caindo e quicando na bancada
+            for (let i = fallingShards.length - 1; i >= 0; i--) {
+                const sh = fallingShards[i];
+                sh.life -= dt;
+                sh.vel.y -= 9.8 * dt;
+                sh.mesh.position.addScaledVector(sh.vel, dt);
+                sh.mesh.rotation.x += sh.rotVel.x * dt;
+                sh.mesh.rotation.y += sh.rotVel.y * dt;
+                sh.mesh.rotation.z += sh.rotVel.z * dt;
+
+                if (sh.mesh.position.y < 0.02) {
+                    sh.mesh.position.y = 0.02;
+                    sh.vel.y = Math.abs(sh.vel.y) * 0.28;
+                    sh.vel.x *= 0.65;
+                    sh.vel.z *= 0.65;
+                    sh.rotVel.multiplyScalar(0.6);
+                }
+
+                if (sh.life <= 0) {
+                    fallingSlagGroup.remove(sh.mesh);
+                    if (sh.mesh.geometry) sh.mesh.geometry.dispose();
+                    if (sh.mesh.material) sh.mesh.material.dispose();
+                    fallingShards.splice(i, 1);
+                }
+            }
+
+            // 6. Atualização de Gaussian Splats e HUD
+            updateGaussianSplats(dt);
+
+            hudRefreshAccum += dt;
+            if (hudRefreshAccum >= 0.08) {
+                hudRefreshAccum = 0;
+                updateHUDMetrics();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Inicia o simulador somente após o carregamento completo da janela
+        window.onload = function () {
+            try {
+                lastFrameTime = performance.now();
+                initThreeJS();
+                animate(lastFrameTime);
+            } catch (err) {
+                console.error('Erro ao inicializar Welding Master 3D:', err);
+            }
+        };
+    </script>
+</body>
+</html>
