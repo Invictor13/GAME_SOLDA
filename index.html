@@ -4,9 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Welding Master 3D — Simulador de Solda</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./assets/interface.css">
+    <link rel="stylesheet" href="./assets/arcade.css">
+    <link rel="manifest" href="./manifest.webmanifest">
+    <meta name="theme-color" content="#10151e">
+    <script src="./assets/three.min.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -22,7 +24,6 @@
             background-color: #0b0f17;
             font-family: 'Inter', sans-serif;
             color: #e2e8f0;
-            touch-action: none;
         }
         .font-industrial {
             font-family: 'Chakra Petch', sans-serif;
@@ -34,6 +35,7 @@
             height: 100%;
             z-index: 1;
             cursor: crosshair;
+            touch-action: none;
         }
         #mask-overlay {
             position: fixed;
@@ -87,15 +89,19 @@
         }
     </style>
 </head>
-<body>
+<body class="menu-open">
     <!-- Container WebGL Three.js -->
     <div id="canvas-container"></div>
+
+    <p id="startup-error" hidden role="alert" class="fixed inset-x-4 top-1/2 z-50 mx-auto max-w-md rounded-xl bg-slate-900 p-4 text-center">
+        Não foi possível iniciar a bancada 3D. Verifique se o WebGL está disponível e recarregue a página.
+    </p>
 
     <!-- Filtro de Máscara de Solda Auto-Escurecimento -->
     <div id="mask-overlay"></div>
 
     <!-- HUD SUPERIOR ULTRA-CLEAN (SEM SOBREPOSIÇÃO E SEM CORTES) -->
-    <header class="fixed top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
+    <header id="bench-header" aria-label="Controles da bancada" class="fixed top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
         <!-- Esquerda: Peça, Volume e Troca Rápida -->
         <div class="glass-hud px-3 py-1.5 rounded-2xl flex items-center gap-2.5 pointer-events-auto">
             <span class="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_#fbbf24] shrink-0"></span>
@@ -114,10 +120,10 @@
                 </div>
             </div>
             <div class="h-6 w-px bg-slate-700/70"></div>
-            <button onclick="cycleStructure()" class="btn-glow px-2 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-[11px] font-industrial font-semibold text-slate-200 hover:text-white" title="Alternar Estrutura/Chanfro">
+            <button id="free-piece" data-action="cycleStructure" class="btn-glow px-2 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-[11px] font-industrial font-semibold text-slate-200 hover:text-white" title="Alternar Estrutura/Chanfro">
                 ⚙️ Peça
             </button>
-            <button onclick="openTutorial()" class="btn-glow w-6 h-6 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-[11px] font-industrial font-bold text-amber-300 flex items-center justify-center" title="Guia Rápido e Controles">
+            <button data-action="openTutorial" class="btn-glow w-6 h-6 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-[11px] font-industrial font-bold text-amber-300 flex items-center justify-center" title="Guia Rápido e Controles">
                 ?
             </button>
         </div>
@@ -125,17 +131,17 @@
         <!-- Centro: Seletor Rápido de Câmeras (1 a 5 — Padrão: 1 Topo) -->
         <div class="glass-hud px-2 py-1.5 rounded-2xl flex items-center gap-1 pointer-events-auto">
             <span class="text-[10px] font-industrial text-slate-400 px-1.5 hidden md:inline">CÂM</span>
-            <button id="cam-btn-1" onclick="setCameraPreset(1)" class="cam-preset-btn btn-glow w-7 h-7 rounded-xl text-xs font-industrial font-bold bg-amber-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.4)]" title="1: Topo (Padrão)">1</button>
-            <button id="cam-btn-2" onclick="setCameraPreset(2)" class="cam-preset-btn btn-glow w-7 h-7 rounded-xl text-xs font-industrial font-bold bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700" title="2: 3/4 Bancada">2</button>
-            <button id="cam-btn-3" onclick="setCameraPreset(3)" class="cam-preset-btn btn-glow w-7 h-7 rounded-xl text-xs font-industrial font-bold bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700" title="3: Close-Up Raiz">3</button>
-            <button id="cam-btn-4" onclick="setCameraPreset(4)" class="cam-preset-btn btn-glow w-7 h-7 rounded-xl text-xs font-industrial font-bold bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700" title="4: Perfil Lateral">4</button>
-            <button id="cam-btn-5" onclick="setCameraPreset(5)" class="cam-preset-btn btn-glow w-7 h-7 rounded-xl text-xs font-industrial font-bold bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700" title="5: Alinhamento Frontal">5</button>
-            <button onclick="resetCameraView()" class="btn-glow w-7 h-7 rounded-xl text-xs bg-slate-800/60 hover:bg-slate-700 text-slate-300 hover:text-white ml-0.5" title="Recentralizar Câmera">🎯</button>
+            <button id="cam-btn-1" data-action="setCameraPreset" data-camera="1" class="cam-preset-btn btn-glow w-7 h-7 rounded-xl text-xs font-industrial font-bold bg-amber-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.4)]" title="1: Topo (Padrão)">1</button>
+            <button id="cam-btn-2" data-action="setCameraPreset" data-camera="2" class="cam-preset-btn btn-glow w-7 h-7 rounded-xl text-xs font-industrial font-bold bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700" title="2: 3/4 Bancada">2</button>
+            <button id="cam-btn-3" data-action="setCameraPreset" data-camera="3" class="cam-preset-btn btn-glow w-7 h-7 rounded-xl text-xs font-industrial font-bold bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700" title="3: Close-Up Raiz">3</button>
+            <button id="cam-btn-4" data-action="setCameraPreset" data-camera="4" class="cam-preset-btn btn-glow w-7 h-7 rounded-xl text-xs font-industrial font-bold bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700" title="4: Perfil Lateral">4</button>
+            <button id="cam-btn-5" data-action="setCameraPreset" data-camera="5" class="cam-preset-btn btn-glow w-7 h-7 rounded-xl text-xs font-industrial font-bold bg-slate-800/80 text-slate-300 hover:text-white hover:bg-slate-700" title="5: Alinhamento Frontal">5</button>
+            <button data-action="resetCameraView" class="btn-glow w-7 h-7 rounded-xl text-xs bg-slate-800/60 hover:bg-slate-700 text-slate-300 hover:text-white ml-0.5" title="Recentralizar Câmera">🎯</button>
         </div>
 
         <!-- Direita: Pontos, Calor e Ritmo Compacto -->
         <div class="glass-hud px-3 py-1.5 rounded-2xl flex items-center gap-3 pointer-events-auto">
-            <div class="flex items-center gap-1.5">
+            <div id="arcade-score" class="flex items-center gap-1.5">
                 <span id="score-val" class="font-industrial font-bold text-sm text-amber-300">0</span>
                 <span id="combo-val" class="text-[10px] font-industrial font-bold text-sky-400 bg-sky-500/15 px-1.5 py-0.5 rounded-md">1.0x</span>
             </div>
@@ -162,39 +168,39 @@
     <div id="live-feedback" class="fixed top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none text-xs font-industrial font-bold tracking-wider px-3.5 py-1.5 rounded-full glass-hud opacity-0"></div>
 
     <!-- DOCK INFERIOR CENTRALIZADO & MINIMALISTA -->
-    <footer class="fixed bottom-3 left-1/2 -translate-x-1/2 z-20 max-w-[96vw] pointer-events-none">
-        <div class="glass-hud px-3 py-1.5 rounded-2xl flex items-center gap-2.5 sm:gap-3 pointer-events-auto">
+    <footer id="bench-footer" class="fixed bottom-3 left-1/2 -translate-x-1/2 z-20 w-max max-w-[96vw] pointer-events-none">
+        <div class="glass-hud px-3 py-1.5 rounded-2xl flex flex-wrap items-center justify-center gap-2.5 sm:gap-3 pointer-events-auto">
             <!-- Indicador de Técnica Detectada -->
-            <div class="flex items-center gap-1.5 pr-1">
+            <div class="bench-extra flex items-center gap-1.5 pr-1">
                 <span id="tech-dot" class="w-2 h-2 rounded-full bg-slate-500 shrink-0"></span>
                 <span id="detected-tech-label" class="text-[11px] font-industrial font-bold text-slate-300 whitespace-nowrap">Livre</span>
             </div>
 
-            <div class="h-5 w-px bg-slate-700/70"></div>
+            <div class="bench-extra h-5 w-px bg-slate-700/70"></div>
 
             <!-- Amperagem -->
-            <div class="flex items-center gap-2">
-                <input id="amp-slider" type="range" min="70" max="180" value="115" class="w-20 sm:w-24" oninput="onAmpChange(this.value)" title="Ajustar Amperagem">
+            <div class="bench-extra flex items-center gap-2">
+                <input id="amp-slider" aria-label="Corrente em amperes" type="range" min="70" max="180" value="115" class="w-20 sm:w-24" title="Ajustar Amperagem">
                 <span id="amp-val" class="font-industrial font-bold text-xs text-amber-400 min-w-[34px] text-right">115A</span>
             </div>
 
-            <div class="h-5 w-px bg-slate-700/70"></div>
+            <div class="bench-extra h-5 w-px bg-slate-700/70"></div>
 
             <!-- Ações Principais -->
-            <div class="flex items-center gap-1.5">
-                <button onclick="rotateWorkpiece()" id="rotate-pipe-btn" class="hidden btn-glow px-2.5 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-sky-300 text-xs font-industrial font-bold" title="Girar Tubulação (+45°)">
+            <div class="flex flex-wrap items-center justify-center gap-1.5">
+                <button data-action="rotateWorkpiece" id="rotate-pipe-btn" class="hidden btn-glow px-2.5 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-sky-300 text-xs font-industrial font-bold" title="Girar Tubulação (+45°)">
                     ↻ Tubo
                 </button>
-                <button onclick="chipAllSlag()" class="btn-glow px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/30 text-amber-300 text-xs font-industrial font-bold flex items-center gap-1" title="Remover Casca de Escória">
+                <button data-action="chipAllSlag" class="btn-glow px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/30 text-amber-300 text-xs font-industrial font-bold flex items-center gap-1" title="Remover Casca de Escória">
                     <span>🔨</span> <span class="hidden sm:inline">Picador</span>
                 </button>
-                <button onclick="resetLevel()" class="btn-glow px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-600/40 text-slate-200 text-xs font-industrial font-semibold" title="Limpar Peça">
+                <button data-action="resetLevel" class="bench-extra btn-glow px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-600/40 text-slate-200 text-xs font-industrial font-semibold" title="Limpar Peça">
                     Limpar
                 </button>
-                <button onclick="inspectWeld()" class="btn-glow px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 text-xs font-industrial font-bold shadow-[0_0_14px_rgba(16,185,129,0.3)]">
+                <button data-action="inspectWeld" class="btn-glow px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 text-xs font-industrial font-bold shadow-[0_0_14px_rgba(16,185,129,0.3)]">
                     Inspecionar ✓
                 </button>
-                <button onclick="toggleSound()" id="sound-btn" class="btn-glow w-7 h-7 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-600/40 text-slate-300 text-xs flex items-center justify-center" title="Ligar/Desligar Som">
+                <button data-action="toggleSound" id="sound-btn" class="bench-extra btn-glow w-7 h-7 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-600/40 text-slate-300 text-xs flex items-center justify-center" title="Ligar/Desligar Som">
                     🔊
                 </button>
             </div>
@@ -202,7 +208,7 @@
     </footer>
 
     <!-- MODAL TUTORIAL INICIAL (3 PASSOS) -->
-    <div id="tutorial-modal" class="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-4">
+    <div id="tutorial-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-4">
         <div class="glass-hud max-w-md w-full rounded-3xl p-6 border border-slate-700/60 shadow-2xl">
             <div class="flex items-center justify-between mb-4">
                 <span class="text-[11px] font-industrial font-bold uppercase tracking-widest text-amber-400">Welding Master 3D • Guia Rápido</span>
@@ -214,10 +220,10 @@
                 <p id="tut-desc" class="text-sm text-slate-300 leading-relaxed"></p>
             </div>
             <div class="flex items-center justify-between mt-6 pt-4 border-t border-slate-800">
-                <button onclick="closeTutorial()" class="text-xs text-slate-400 hover:text-slate-200 font-semibold px-2 py-1">Pular</button>
+                <button data-action="closeTutorial" class="text-xs text-slate-400 hover:text-slate-200 font-semibold px-2 py-1">Pular</button>
                 <div class="flex gap-2">
-                    <button id="tut-prev-btn" onclick="prevTutorialStep()" class="hidden px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-industrial font-semibold text-slate-200">Anterior</button>
-                    <button id="tut-next-btn" onclick="nextTutorialStep()" class="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-xs font-industrial font-bold">Próximo →</button>
+                    <button id="tut-prev-btn" data-action="prevTutorialStep" class="hidden px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-industrial font-semibold text-slate-200">Anterior</button>
+                    <button id="tut-next-btn" data-action="nextTutorialStep" class="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 text-xs font-industrial font-bold">Próximo →</button>
                 </div>
             </div>
         </div>
@@ -233,6 +239,7 @@
             <div class="text-center my-3">
                 <div id="insp-grade" class="font-industrial font-bold text-5xl text-white">92%</div>
                 <p id="insp-comment" class="text-xs text-slate-300 mt-2"></p>
+                <p class="mt-2 text-xs text-slate-400">Avaliação de desempenho no jogo.</p>
             </div>
             <div class="grid grid-cols-3 gap-2 my-4">
                 <div class="bg-slate-900/70 rounded-xl p-2.5 text-center border border-slate-800">
@@ -248,21 +255,149 @@
                     <div id="insp-heat" class="font-industrial font-bold text-base text-amber-400">0%</div>
                 </div>
             </div>
+            <p id="result-details"></p>
+            <p id="result-reward" role="status"></p>
             <div class="flex items-center justify-between gap-2 mt-5">
-                <button onclick="closeInspectAndRetry()" class="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-industrial font-bold text-slate-200">Refazer Peça</button>
-                <button onclick="nextStructure()" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 text-xs font-industrial font-bold">Próxima Estrutura →</button>
+                <button data-action="closeInspectAndRetry" class="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-industrial font-bold text-slate-200">Refazer Peça</button>
+                <button id="result-next" data-action="nextStructure" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 text-xs font-industrial font-bold">Próxima Estrutura →</button>
             </div>
         </div>
     </div>
 
+    <main id="game-menu" aria-label="Menu principal">
+    <div class="menu-shell">
+        <div class="menu-brand">
+            <p><span></span> OFICINA DE SOLDA</p>
+            <h1>WELDING <br>MASTER <em>3D</em></h1>
+        </div>
+        <nav id="mode-menu" aria-label="Menu principal">
+            <button class="home-play" data-page="career"><strong>Iniciar carreira</strong><span>→</span></button>
+            <div class="home-links">
+                <button data-page="modes"><span class="nav-icon" aria-hidden="true">▦</span> Modos de jogo <span aria-hidden="true">›</span></button>
+                <button data-page="workshop"><span class="nav-icon" aria-hidden="true">◇</span> Oficina <span aria-hidden="true">›</span></button>
+                <button data-page="stats"><span class="nav-icon" aria-hidden="true">◉</span> Meu perfil <span aria-hidden="true">›</span></button>
+            </div>
+            <div class="home-secondary">
+                <button data-page="settings">Configurações</button>
+                <button id="resume-game" hidden>Retomar sessão</button>
+            </div>
+            <footer class="home-credits" aria-label="Créditos do jogo">
+                <p>Desenvolvido por <strong>Victor Viana</strong></p>
+                <a href="https://github.com/Invictor13" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+                <a href="https://www.linkedin.com/in/victor-ladislau-14402a170/" target="_blank" rel="noopener noreferrer">LinkedIn <span aria-hidden="true">↗</span></a>
+            </footer>
+        </nav>
+        <section id="menu-page" hidden aria-labelledby="menu-title">
+            <button id="menu-back" class="game-link">← Menu principal</button>
+            <h2 id="menu-title" tabindex="-1"></h2>
+            <div id="menu-content"></div>
+        </section>
+        <p id="save-warning" hidden role="status">O navegador bloqueou o armazenamento. O progresso só será mantido nesta sessão.</p>
+    </div>
+</main>
+<section id="order-hud" hidden aria-label="Ordem de serviço">
+    <div class="order-heading"><div><strong id="order-title"></strong><span id="order-clock"></span></div><span id="current-amp"></span></div>
+    <p id="order-text"></p>
+    <div id="rod-controls" hidden>
+        <div class="rod-readout"><label for="arc-gap">Distância do arco</label><span id="rod-status" role="status"></span></div>
+        <input id="arc-gap" type="range" min="0" max="100" value="0" aria-describedby="rod-help">
+        <button id="replace-rod">Trocar vareta</button>
+        <small id="rod-help"></small>
+    </div>
+</section>
+    <div id="bench-navigation" hidden><button id="bench-toggle" type="button" aria-controls="bench-header" aria-expanded="false">Controles</button><button id="leave-game" type="button">Menu</button></div>
+    <script src="./assets/workshop.js"></script>
+    <script src="./assets/campaign.js"></script>
+    <script src="./assets/arcade.js"></script>
     <script>
+        'use strict';
+
+        function bindPointerControls(canvas, { aim, startArc, stopArc, orbit, activateAudio, sensitivity = () => 1 }, targets = { window, document }) {
+            const { window: view, document: page } = targets;
+            let active = null;
+
+            function cancel() {
+                if (!active) return;
+                const { id, button } = active;
+                active = null;
+                if (button === 0) stopArc();
+                if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id);
+            }
+
+            canvas.addEventListener('contextmenu', event => event.preventDefault());
+
+            canvas.addEventListener('pointerdown', event => {
+                const { button, pointerId, clientX, clientY } = event;
+                if (active || (button !== 0 && button !== 2)) return;
+                activateAudio();
+                if (button === 0 && !aim(clientX, clientY)) return;
+
+                const gain = button === 0 && event.pointerType === 'mouse' ? sensitivity() : 1;
+                active = { id: pointerId, button, x: clientX, y: clientY, aimX: clientX, aimY: clientY, gain };
+                canvas.setPointerCapture(pointerId);
+                if (button === 0) startArc();
+            });
+
+            view.addEventListener('pointermove', event => {
+                const { pointerId, pointerType, clientX, clientY, buttons } = event;
+                if (!active) {
+                    if (pointerType === 'mouse') aim(clientX, clientY);
+                    return;
+                }
+                if (active.id !== pointerId) return;
+
+                const buttonMask = active.button === 2 ? 2 : 1;
+                if (!(buttons & buttonMask)) {
+                    cancel();
+                    return;
+                }
+
+                if (active.button === 2) {
+                    orbit(clientX - active.x, clientY - active.y);
+                    active.x = clientX;
+                    active.y = clientY;
+                } else if (active.gain === 1) {
+                    aim(clientX, clientY);
+                } else {
+                    const bounds = canvas.getBoundingClientRect();
+                    active.aimX = Math.max(bounds.left, Math.min(bounds.right, active.aimX + (clientX - active.x) * active.gain));
+                    active.aimY = Math.max(bounds.top, Math.min(bounds.bottom, active.aimY + (clientY - active.y) * active.gain));
+                    active.x = clientX;
+                    active.y = clientY;
+                    aim(active.aimX, active.aimY);
+                }
+            });
+
+            function cancelMatchingPointer(event) {
+                if (active?.id === event.pointerId) cancel();
+            }
+
+            view.addEventListener('pointerup', cancelMatchingPointer);
+            view.addEventListener('pointercancel', cancelMatchingPointer);
+            canvas.addEventListener('lostpointercapture', cancelMatchingPointer);
+            view.addEventListener('blur', cancel);
+            page.addEventListener('visibilitychange', () => {
+                if (page.hidden) cancel();
+            });
+
+            return cancel;
+        }
+
+        function evaluateWeld(volume, onTargetSamples, totalSamples, burnThroughCount) {
+            const precision = totalSamples > 2 ? Math.round(onTargetSamples / totalSamples * 100) : 0;
+            const thermal = Math.max(0, Math.round(100 - burnThroughCount * 14));
+            const grade = Math.round(volume * 0.50 + precision * 0.30 + thermal * 0.20);
+            const medal = grade >= 80 ? 'gold' : grade >= 55 ? 'silver' : null;
+            return { precision, thermal, grade, medal };
+        }
+
         // =========================================================================
         // WELDING MASTER 3D — ENGINE THREE.JS + GAUSSIAN SPLATTING + POÇA CONFORMAL
         // =========================================================================
 
         let scene, camera, renderer, envMapTexture;
         let workpieceGroup, weldBeadsGroup, slagGroup, fallingSlagGroup, guideGroup;
-        let torchGroup, moltenPuddleMesh, arcLight;
+        let torchGroup, electrodeGroup, rodMesh, moltenPuddleMesh, arcLight;
         let raycaster, mouseNDC;
 
         // Sistema de Gaussian Splats Volumétricos (Arco, Plasma, Faíscas, Fumaça)
@@ -285,14 +420,13 @@
             target: new THREE.Vector3(0, 0.35, 0),
             desiredTarget: new THREE.Vector3(0, 0.35, 0)
         };
-        let isOrbiting = false;
-        let orbitLastX = 0;
-        let orbitLastY = 0;
         const keysPressed = { w: false, a: false, s: false, d: false, up: false, down: false, left: false, right: false };
 
         // Estado do Jogo e Física de Soldagem
         let currentLevel = 0;
         let isWelding = false;
+        let cancelPointer = () => {};
+        let contextLost = false;
         let amperage = 115;
         let heatLevel = 0;
         let soundEnabled = true;
@@ -329,7 +463,6 @@
         let fallingShards = [];
 
         // Estado da Tocha, Movimento Livre e Diagnóstico em Tempo Real
-        let pointerActive = false;
         let hasValidAim = false;
         let aimWorldPos = new THREE.Vector3(0, 0.4, 0);
         let aimNormal = new THREE.Vector3(0, 1, 0);
@@ -563,6 +696,7 @@
             document.getElementById('tut-next-btn').textContent = (tutStep === TUTORIAL_STEPS.length - 1) ? 'Começar a Soldar ⚡' : 'Próximo →';
         }
         function openTutorial() {
+            cancelPointer();
             tutStep = 0;
             renderTutorialStep();
             document.getElementById('tutorial-modal').classList.remove('hidden');
@@ -605,6 +739,20 @@
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
             renderer.toneMappingExposure = 1.08;
             container.appendChild(renderer.domElement);
+            const errorMessage = document.getElementById('startup-error');
+            const startupMessage = errorMessage.textContent;
+            renderer.domElement.addEventListener('webglcontextlost', () => {
+                contextLost = true;
+                cancelPointer();
+                errorMessage.textContent = 'A conexão com o WebGL foi interrompida. Aguarde a recuperação ou recarregue a página.';
+                errorMessage.hidden = false;
+            });
+            renderer.domElement.addEventListener('webglcontextrestored', () => {
+                contextLost = false;
+                lastFrameTime = performance.now();
+                errorMessage.hidden = true;
+                errorMessage.textContent = startupMessage;
+            });
 
             // Ambiente metálico industrial de alto contraste
             envMapTexture = createWorkshopEnvironment();
@@ -636,22 +784,38 @@
             arcLight = new THREE.PointLight(0x93c5fd, 0, 11, 1.6);
             scene.add(arcLight);
 
-            // Bancada Industrial
-            const benchGeo = new THREE.PlaneGeometry(36, 36);
-            const benchMat = new THREE.MeshStandardMaterial({
-                color: 0x111827,
-                roughness: 0.78,
-                metalness: 0.25
-            });
-            const bench = new THREE.Mesh(benchGeo, benchMat);
-            bench.rotation.x = -Math.PI / 2;
-            bench.position.y = -0.02;
-            bench.receiveShadow = true;
-            scene.add(bench);
-
-            const gridHelper = new THREE.GridHelper(32, 32, 0x334155, 0x1e293b);
-            gridHelper.position.y = -0.015;
-            scene.add(gridHelper);
+            // Apoio da peça no plano original de trabalho, com piso rebaixado.
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(36, 36), new THREE.MeshStandardMaterial({
+                color: 0x363d40, roughness: 0.94
+            }));
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.y = -1.88;
+            floor.receiveShadow = true;
+            scene.add(floor);
+            const benchMaterial = new THREE.MeshStandardMaterial({ color: 0x4c5457, metalness: 0.48, roughness: 0.67 });
+            const frameMaterial = new THREE.MeshStandardMaterial({ color: 0x26333a, metalness: 0.49, roughness: 0.61 });
+            const safetyMaterial = new THREE.MeshStandardMaterial({ color: 0xb78945, roughness: 0.77 });
+            function fixture(width, height, depth, x, y, z, material) {
+                const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
+                mesh.position.set(x, y, z);
+                mesh.receiveShadow = true;
+                scene.add(mesh);
+                return mesh;
+            }
+            fixture(10.35, .20, 6.8, 0, -.12, 0, benchMaterial);
+            fixture(10.20, .31, 6.56, 0, -.37, 0, frameMaterial);
+            for (const x of [-4.78, 4.78]) for (const z of [-2.93, 2.93]) {
+                fixture(.21, 1.45, .22, x, -1.14, z, frameMaterial);
+                fixture(.34, .08, .35, x, -1.83, z, frameMaterial);
+            }
+            for (const x of [-4.1, -3.72, -3.34, 3.34, 3.72, 4.1]) {
+                fixture(.21, .07, .024, x, -.34, 3.29, safetyMaterial).rotation.z = -.42;
+            }
+            const rack = fixture(14, 4.6, .24, 0, .45, -6.8, frameMaterial);
+            rack.receiveShadow = false;
+            for (const x of [-5, -2.5, 0, 2.5, 5]) fixture(.14, 4.6, .16, x, .45, -6.6, benchMaterial);
+            const lampFixture = fixture(3.4, .09, .38, 4.8, 2.8, -5.95, new THREE.MeshBasicMaterial({ color: 0xffe2b3 }));
+            lampFixture.receiveShadow = false;
 
             // Grupos de Cena
             workpieceGroup = new THREE.Group();
@@ -672,8 +836,10 @@
             mouseNDC = new THREE.Vector2();
 
             generateProceduralTextures();
+            benchMaterial.roughnessMap = steelRoughTex;
             initGaussianSplats();
             buildWeldingTorch();
+            buildElectrodeHolder();
             loadStructure(0);
             setCameraPreset(1);
 
@@ -1018,6 +1184,23 @@
             scene.add(moltenPuddleMesh);
         }
 
+        function buildElectrodeHolder() {
+            electrodeGroup = new THREE.Group();
+            const dark = new THREE.MeshStandardMaterial({ color: 0x263447, roughness: 0.68 });
+            const metal = new THREE.MeshStandardMaterial({ color: 0xb68453, metalness: 0.65, roughness: 0.38 });
+            const coating = new THREE.MeshStandardMaterial({ color: 0x9ea4a0, roughness: 0.64 });
+            rodMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.019, 1, 12), coating);
+            const holder = new THREE.Group();
+            const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.24, 0.22), metal);
+            const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 1.08, 16), dark);
+            grip.rotation.z = -Math.PI / 2.8;
+            grip.position.set(0.51, 0.20, 0);
+            holder.add(jaw, grip);
+            electrodeGroup.add(rodMesh, holder);
+            electrodeGroup.visible = false;
+            scene.add(electrodeGroup);
+        }
+
         function updateTorchPose(worldPos, normal) {
             if (!torchGroup) return;
             // Folga real de arco (arc gap) de 4.5cm acima da superfície + inclinação ergonômica segura
@@ -1027,6 +1210,12 @@
             const upVec = new THREE.Vector3(0, 1, 0);
             const quat = new THREE.Quaternion().setFromUnitVectors(upVec, safeDir);
             torchGroup.quaternion.slerp(quat, 0.35);
+            const rodLength = Math.max(0.08, arcade.rodLength() / 100 * 0.95);
+            rodMesh.scale.y = rodLength;
+            rodMesh.position.y = rodLength / 2;
+            electrodeGroup.children[1].position.y = rodLength;
+            electrodeGroup.position.copy(worldPos).addScaledVector(normal, arcade.distance() * 0.0024);
+            electrodeGroup.quaternion.slerp(quat, 0.35);
 
             if (moltenPuddleMesh) {
                 moltenPuddleMesh.position.copy(worldPos).addScaledVector(normal, 0.015);
@@ -1050,6 +1239,7 @@
         }
 
         function loadStructure(index) {
+            cancelPointer();
             currentLevel = (index + STRUCTURES.length) % STRUCTURES.length;
             const spec = STRUCTURES[currentLevel];
 
@@ -1079,6 +1269,9 @@
             heatLevel = 0;
             totalSamplesDeposited = 0;
             onTargetSamples = 0;
+            weldSpeedSmooth = 0;
+            hasValidAim = false;
+            aimUV.valid = false;
             burnThroughCount = 0;
             isWelding = false;
             lastWeldUV = null;
@@ -1095,6 +1288,7 @@
             amperage = spec.idealAmp;
             document.getElementById('amp-slider').value = amperage;
             document.getElementById('amp-val').textContent = `${amperage}A`;
+            arcade.onLoadPiece();
 
             // Atualiza HUD
             document.getElementById('level-title').textContent = spec.name;
@@ -1104,17 +1298,17 @@
             const steelMat = new THREE.MeshStandardMaterial({
                 map: steelPlateTex,
                 roughnessMap: steelRoughTex,
-                color: 0x8a99ad,
-                metalness: 0.78,
-                roughness: 0.42,
-                envMapIntensity: 1.05
+                color: 0x9a9e9d,
+                metalness: 0.72,
+                roughness: 0.49,
+                envMapIntensity: 0.98
             });
 
             const bevelMat = new THREE.MeshStandardMaterial({
-                color: 0xdbeafe,
-                metalness: 0.90,
-                roughness: 0.22,
-                envMapIntensity: 1.25
+                color: 0xbec4bf,
+                metalness: 0.85,
+                roughness: 0.31,
+                envMapIntensity: 1.17
             });
 
             const backingMat = new THREE.MeshStandardMaterial({
@@ -1632,8 +1826,8 @@
 
                 // Ajuste de taxa de deposição (3 a 4 passes completos para preencher o chanfro!)
                 const speedPenalty = weldSpeedSmooth > 3.6 ? 0.42 : (weldSpeedSmooth < 0.25 ? 1.15 : 1.0);
-                const depositRate = 0.34 * ampRatio * speedPenalty;
-                const heatInputRate = 3.15 * ampRatio;
+                const depositRate = 0.34 * ampRatio * speedPenalty * arcade.physical('deposition') * arcade.stability();
+                const heatInputRate = 3.15 * ampRatio * arcade.physical('heat');
 
                 for (let st = 1; st <= steps; st++) {
                     const alpha = st / steps;
@@ -1728,7 +1922,7 @@
                 if (inGroove) onTargetSamples += dt * 20;
 
                 const speedHeatMult = weldSpeedSmooth < 0.45 ? 1.55 : (weldSpeedSmooth > 3.2 ? 0.65 : 1.0);
-                heatLevel = THREE.MathUtils.clamp(heatLevel + (12.5 * ampRatio * speedHeatMult - 7.2) * dt, 0, 100);
+                heatLevel = THREE.MathUtils.clamp(heatLevel + (12.5 * ampRatio * speedHeatMult * arcade.physical('heat') - 7.2) * dt, 0, 100);
 
                 if (heatLevel >= 98) {
                     burnThroughCount += dt * 4;
@@ -1736,10 +1930,12 @@
                     showLiveFeedback('⚠️ SUPERAQUECIMENTO! Mova a tocha mais rápido!', 'text-red-400');
                 } else if (inGroove && weldSpeedSmooth >= 0.42 && weldSpeedSmooth <= 3.1) {
                     combo = Math.min(3.0, combo + dt * 0.16);
-                    score += Math.round(18 * combo * dt * 10);
-                } else if (!inGroove) {
+                } else {
                     combo = Math.max(1.0, combo - dt * 0.6);
                 }
+
+                const points = arcade.sample(curU, curV, dt, inGroove, weldSpeedSmooth);
+                if (heatLevel < 98 && !arcade.isZen()) score += points;
 
                 // Emite Gaussian Splats do arco elétrico, faíscas e fumaça
                 emitArcSplats(filteredAimPos, aimNormal);
@@ -2277,12 +2473,13 @@
         // =========================================================================
         function emitArcSplats(pos, normal) {
             // 1. Núcleo do arco elétrico azul-branco
+            if (arcade.reduced()) return;
             const arcPos = pos.clone().addScaledVector(normal, 0.045);
             spawnGaussianSplat(arcPos, new THREE.Vector3(0, 0.05, 0), 0xe0f2fe, 0.42, 0.06, 'arc');
             spawnGaussianSplat(arcPos, new THREE.Vector3((Math.random() - 0.5) * 0.2, 0.1, (Math.random() - 0.5) * 0.2), 0x38bdf8, 0.72, 0.09, 'arc');
 
             // 2. Faíscas incandescentes com gravidade
-            const sparkCount = amperage > 135 ? 4 : 2;
+            const sparkCount = arcade.light() ? 1 : (amperage > 135 ? 4 : 2) + arcade.physical('sparks') + (arcade.stability() < 1 ? 2 : 0);
             for (let i = 0; i < sparkCount; i++) {
                 const v = new THREE.Vector3(
                     (Math.random() - 0.5) * 4.8,
@@ -2479,59 +2676,36 @@
         function setupEventListeners() {
             const dom = renderer.domElement;
 
-            dom.addEventListener('contextmenu', e => e.preventDefault());
-
-            dom.addEventListener('pointerdown', (e) => {
-                initAudio();
-                if (e.button === 2) {
-                    // Botão Direito: Girar câmera livremente
-                    isOrbiting = true;
-                    orbitLastX = e.clientX;
-                    orbitLastY = e.clientY;
-                    return;
-                }
-                if (e.button === 0) {
-                    pointerActive = true;
-                    updateAimFromPointer(e.clientX, e.clientY);
-                    if (aimUV.valid) {
-                        filteredAimPos.copy(aimWorldPos);
-                        isWelding = true;
-                        setArcSoundActive(true);
-                    }
-                }
-            });
-
-            window.addEventListener('pointermove', (e) => {
-                if (isOrbiting) {
-                    const dx = e.clientX - orbitLastX;
-                    const dy = e.clientY - orbitLastY;
-                    orbitLastX = e.clientX;
-                    orbitLastY = e.clientY;
+            cancelPointer = bindPointerControls(dom, {
+                aim(x, y) {
+                    if (!arcade.allowed()) return false;
+                    updateAimFromPointer(x, y);
+                    return aimUV.valid && Math.abs(aimUV.v) <= STRUCTURES[currentLevel].grooveHalfWidth * 1.08;
+                },
+                startArc() {
+                    filteredAimPos.copy(aimWorldPos);
+                    arcade.begin();
+                },
+                stopArc() {
+                    arcade.stop();
+                    lastWeldUV = null;
+                    lastWeldWorldPos = null;
+                    flushPendingSlagPatch();
+                },
+                orbit(dx, dy) {
                     camState.theta -= dx * 0.0065;
                     camState.phi = THREE.MathUtils.clamp(camState.phi - dy * 0.0055, 0.08, 1.48);
-                    return;
-                }
-
-                updateAimFromPointer(e.clientX, e.clientY);
-                if (pointerActive && aimUV.valid && !isWelding) {
-                    filteredAimPos.copy(aimWorldPos);
-                    isWelding = true;
-                    setArcSoundActive(true);
-                }
+                },
+                activateAudio: initAudio,
+                sensitivity: arcade.sensitivity
             });
 
-            window.addEventListener('pointerup', (e) => {
-                if (e.button === 2) {
-                    isOrbiting = false;
-                    return;
-                }
-                if (pointerActive) {
-                    pointerActive = false;
-                    isWelding = false;
-                    setArcSoundActive(false);
-                    flushPendingSlagPatch();
-                }
-            });
+            function resetPan() {
+                for (const key of Object.keys(keysPressed)) keysPressed[key] = false;
+            }
+
+            window.addEventListener('blur', resetPan);
+            document.addEventListener('visibilitychange', resetPan);
 
             dom.addEventListener('wheel', (e) => {
                 e.preventDefault();
@@ -2630,8 +2804,26 @@
         function setArcSoundActive(active) {
             if (!audioCtx || !arcGainNode) return;
             const now = audioCtx.currentTime;
-            const targetVol = (active && soundEnabled) ? THREE.MathUtils.clamp((amperage / 140) * 0.16, 0.06, 0.22) : 0.0;
+            const targetVol = (active && soundEnabled) ? THREE.MathUtils.clamp((amperage / 140) * 0.16 * arcade.stability(), 0.03, 0.22) : 0.0;
             arcGainNode.gain.setTargetAtTime(targetVol, now, 0.03);
+            if (arcFilterNode) arcFilterNode.frequency.setTargetAtTime(arcade.electrode() ? arcade.physical('pitch') * (2 - arcade.stability()) : 1450, now, 0.045);
+        }
+
+        function playMenuFeedback() {
+            if (!soundEnabled) return;
+            initAudio();
+            if (!audioCtx || audioCtx.state === 'closed') return;
+            const now = audioCtx.currentTime;
+            const tone = audioCtx.createOscillator();
+            const level = audioCtx.createGain();
+            tone.type = 'triangle';
+            tone.frequency.setValueAtTime(850, now);
+            tone.frequency.exponentialRampToValueAtTime(385, now + .075);
+            level.gain.setValueAtTime(.025, now);
+            level.gain.exponentialRampToValueAtTime(.001, now + .08);
+            tone.connect(level).connect(audioCtx.destination);
+            tone.start();
+            tone.stop(now + .085);
         }
 
         function playSlagPopTick() {
@@ -2676,6 +2868,7 @@
             soundEnabled = !soundEnabled;
             document.getElementById('sound-btn').textContent = soundEnabled ? '🔊' : '🔇';
             if (!soundEnabled) setArcSoundActive(false);
+            arcade.soundChanged();
         }
 
         // =========================================================================
@@ -2708,7 +2901,7 @@
             document.getElementById('volume-pct').textContent = `${vol}%`;
             document.getElementById('volume-bar').style.width = `${vol}%`;
 
-            document.getElementById('score-val').textContent = score.toLocaleString('pt-BR');
+            document.getElementById('score-val').textContent = Math.round(score).toLocaleString('pt-BR');
             document.getElementById('combo-val').textContent = `${combo.toFixed(1)}x`;
 
             const hPct = Math.round(heatLevel);
@@ -2716,9 +2909,10 @@
             document.getElementById('heat-bar').style.width = `${hPct}%`;
 
             // Atenua o guia holográfico conforme o chanfro é preenchido
+            arcade.renderHud();
             if (guideMesh) {
                 const baseOp = Math.max(0.0, (1.0 - vol / 85) * 0.24);
-                guideMesh.material.opacity = baseOp * (0.72 + Math.sin(guideUniformTime * 3.5) * 0.28);
+                guideMesh.material.opacity = baseOp * (arcade.reduced() ? 0.72 : 0.72 + Math.sin(guideUniformTime * 3.5) * 0.28);
             }
         }
 
@@ -2755,6 +2949,7 @@
         function onAmpChange(val) {
             amperage = parseInt(val, 10);
             document.getElementById('amp-val').textContent = `${amperage}A`;
+            document.getElementById('current-amp').textContent = `${amperage} A`;
         }
 
         function rotateWorkpiece() {
@@ -2764,7 +2959,7 @@
         }
 
         function cycleStructure() {
-            loadStructure(currentLevel + 1);
+            arcade.chooseNextFreePiece();
             showLiveFeedback(`⚙️ ${STRUCTURES[currentLevel].name}`, 'text-amber-300');
         }
 
@@ -2774,46 +2969,46 @@
         }
 
         function inspectWeld() {
-            isWelding = false;
-            setArcSoundActive(false);
-
-            const vol = computeGrooveVolumePercent();
-            const prec = totalSamplesDeposited > 2 ? Math.round((onTargetSamples / totalSamplesDeposited) * 100) : 0;
-            const thermal = Math.max(0, Math.round(100 - burnThroughCount * 14));
-            const grade = Math.round(vol * 0.50 + prec * 0.30 + thermal * 0.20);
-
-            document.getElementById('insp-vol').textContent = `${vol}%`;
-            document.getElementById('insp-prec').textContent = `${prec}%`;
-            document.getElementById('insp-heat').textContent = `${thermal}%`;
-            document.getElementById('insp-grade').textContent = `${grade}%`;
-
-            const badge = document.getElementById('insp-badge');
-            const comment = document.getElementById('insp-comment');
-            if (grade >= 80) {
-                badge.textContent = 'APROVADO • PADRÃO ASME';
-                badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-industrial font-bold bg-emerald-500/20 text-emerald-300';
-                comment.textContent = 'Excelente fusão nas paredes do chanfro, escamas regulares e ótimo controle térmico!';
-            } else if (grade >= 55) {
-                badge.textContent = 'ACEITÁVEL • REFORÇAR';
-                badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-industrial font-bold bg-amber-500/20 text-amber-300';
-                comment.textContent = 'Boa base, mas o chanfro precisa de mais camadas de preenchimento ou melhor centralização.';
-            } else {
-                badge.textContent = 'REPROVADO • FALTA DE FUSÃO';
-                badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-industrial font-bold bg-rose-500/20 text-rose-300';
-                comment.textContent = 'Preenchimento insuficiente ou excesso de superaquecimento. Use o Picador entre passes e preencha todo o chanfro.';
-            }
-
-            document.getElementById('inspect-modal').classList.remove('hidden');
+            if (!arcade.allowed()) return;
+            cancelPointer();
+            const volume = computeGrooveVolumePercent();
+            const { precision, thermal } = evaluateWeld(volume, onTargetSamples, totalSamplesDeposited, burnThroughCount);
+            const report = arcade.finish(volume, precision, thermal);
+            const { metrics, finalGrade, passed, anotherStage, star, record, objective, medal } = report;
+            const session = arcade.current();
+            const zen = arcade.isZen();
+            const set = (id, value) => { document.getElementById(id).textContent = value; };
+            set('insp-vol', `${volume}%`);
+            set('insp-prec', `${precision}%`);
+            set('insp-heat', `${thermal}%`);
+            set('insp-grade', zen ? 'Solda livre' : `${finalGrade}/100`);
+            set('insp-badge', zen ? 'Resumo da peça' : [medal, star ? '★' : ''].filter(Boolean).join(' ') || 'Sem medalha');
+            const feedback = [
+                [metrics.coverage, 'Distribua os passes por toda a junta.'],
+                [metrics.pace, 'Controle a velocidade de avanço.'],
+                [metrics.precision, 'Traga o cordão para o centro.'],
+                [metrics.thermal, 'Faça pausas para resfriar a peça.'],
+                [metrics.stability, 'Mantenha a distância do arco na faixa estável.']
+            ].sort((a, b) => a[0] - b[0])[0][1];
+            const summary = session.mode === 'arcade' ? `${record} pontos Arcade` : zen ? 'Você pode voltar à mesma peça.'
+                : anotherStage ? 'Primeira etapa aprovada.' : passed ? 'Ordem aprovada.' : `Meta ${session.job.minimum}/100. ${objective && objective.achieved < objective.required ? `${objective.label}: ${objective.achieved}${objective.suffix} de ${objective.required}${objective.suffix}. ` : ''}${feedback}`;
+            set('insp-comment', summary);
+            document.getElementById('result-reward').textContent = report.reward || '';
+            set('result-details', `Cobertura ${metrics.coverage}% · Avanço ${metrics.pace}% · Regularidade ${metrics.regularity}% · Arco ${metrics.stability}% · Trocas ${metrics.replacements}`);
+            const next = document.getElementById('result-next');
+            next.textContent = anotherStage ? 'Segunda peça →' : session.mode === 'career' && passed && session.index < 9 ? 'Próxima missão →' : zen ? 'Continuar peça' : 'Voltar ao menu';
+            const modal = document.getElementById('inspect-modal');
+            modal.classList.toggle('result-pass', !zen && passed && Boolean(medal));
+            modal.classList.remove('hidden');
+            if (!zen && passed && medal) playSlagPopTick();
         }
 
         function closeInspectAndRetry() {
-            document.getElementById('inspect-modal').classList.add('hidden');
-            resetLevel();
+            arcade.retry();
         }
 
         function nextStructure() {
-            document.getElementById('inspect-modal').classList.add('hidden');
-            loadStructure(currentLevel + 1);
+            arcade.advance();
         }
 
         // =========================================================================
@@ -2823,10 +3018,16 @@
 
         function animate(timestamp) {
             requestAnimationFrame(animate);
+            if (document.hidden || contextLost) return;
 
             const now = timestamp || performance.now();
-            const dt = Math.min(0.05, Math.max(0.001, (now - lastFrameTime) / 1000));
+            const clockDt = Math.max(0, (now - lastFrameTime) / 1000);
+            const dt = Math.min(0.05, Math.max(0.001, clockDt));
             lastFrameTime = now;
+            if (arcade.menu()) {
+                arcade.drawWorkshop(dt);
+                return;
+            }
             guideUniformTime += dt;
 
             // 1. Rotação suave da tubulação (Nível 4) em torno do eixo central do tubo (Y = 1.55)
@@ -2840,7 +3041,10 @@
             }
 
             // 2. Câmera interativa + filtragem suave da tocha
+            arcade.step(dt, clockDt);
             updateCameraTransform(dt);
+            torchGroup.visible = !arcade.menu() && !arcade.electrode() && hasValidAim;
+            electrodeGroup.visible = !arcade.menu() && Boolean(arcade.electrode()) && hasValidAim;
 
             if (hasValidAim) {
                 filteredAimPos.lerp(aimWorldPos, Math.min(1, dt * 26));
@@ -2848,18 +3052,18 @@
             }
 
             // 3. Física contínua da poça de fusão, brilho do arco e filtro de máscara
-            stepWeldPhysics(dt);
+            if (!arcade.controlsOpen()) stepWeldPhysics(dt);
 
             const maskEl = document.getElementById('mask-overlay');
             if (isWelding && aimUV.valid) {
                 arcLight.position.copy(filteredAimPos).addScaledVector(aimNormal, 0.25);
-                arcLight.intensity = 2.6 + Math.random() * 1.4;
+                arcLight.intensity = arcade.reduced() ? 0.55 : (2.6 + Math.random() * 1.4) * arcade.stability();
                 if (moltenPuddleMesh) {
                     moltenPuddleMesh.material.opacity = 0.55;
                     const sScale = 0.85 * puddleRadiusFactor;
                     moltenPuddleMesh.scale.set(sScale, sScale, sScale);
                 }
-                if (maskEl) maskEl.style.backgroundColor = 'rgba(2, 30, 20, 0.16)';
+                if (maskEl && !arcade.reduced()) maskEl.style.backgroundColor = 'rgba(2, 30, 20, 0.16)';
             } else {
                 arcLight.intensity = Math.max(0, arcLight.intensity - dt * 24);
                 if (moltenPuddleMesh) {
@@ -2921,16 +3125,43 @@
             renderer.render(scene, camera);
         }
 
+        const actions = {
+            cycleStructure,
+            openTutorial,
+            setCameraPreset,
+            resetCameraView,
+            rotateWorkpiece,
+            chipAllSlag,
+            resetLevel,
+            inspectWeld,
+            toggleSound,
+            closeTutorial,
+            prevTutorialStep,
+            nextTutorialStep,
+            closeInspectAndRetry,
+            nextStructure
+        };
+
+        for (const button of document.querySelectorAll('[data-action]')) {
+            button.addEventListener('click', () => actions[button.dataset.action](Number(button.dataset.camera)));
+        }
+
+        const ampSlider = document.getElementById('amp-slider');
+        ampSlider.addEventListener('input', () => onAmpChange(ampSlider.value));
+
         // Inicia o simulador somente após o carregamento completo da janela
-        window.onload = function () {
+        window.addEventListener('load', () => {
             try {
                 lastFrameTime = performance.now();
                 initThreeJS();
+                arcade.ready();
                 animate(lastFrameTime);
             } catch (err) {
                 console.error('Erro ao inicializar Welding Master 3D:', err);
+                document.getElementById('startup-error').hidden = false;
             }
-        };
+        });
     </script>
+    <script src="./assets/install.js"></script>
 </body>
 </html>
