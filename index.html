@@ -99,6 +99,10 @@
 
     <!-- Filtro de Máscara de Solda Auto-Escurecimento -->
     <div id="mask-overlay"></div>
+    <aside id="update-notice" hidden aria-label="Atualização disponível">
+        <span role="status">Uma nova versão do jogo está pronta.</span>
+        <button id="update-reload" type="button">Atualizar jogo</button>
+    </aside>
     <div id="weld-reticle" hidden aria-hidden="true"></div>
 
     <!-- HUD SUPERIOR ULTRA-CLEAN (SEM SOBREPOSIÇÃO E SEM CORTES) -->
@@ -2922,7 +2926,7 @@
                 camState.radius = 6.2;
             }
 
-            if (num === 1) {
+            if (num !== 3) {
                 const width = spec.isPipe ? 5.5 : spec.length || 8.65;
                 camState.radius = Math.max(camState.radius, portraitFitRadius(camera.aspect, width, camera.fov));
             }

@@ -246,3 +246,25 @@ body.touch-detected #touch-dock { display: flex; }
     #bench-navigation { right: max(.55rem, env(safe-area-inset-right)); top: max(.6rem, env(safe-area-inset-top)); }
     #bench-navigation button { min-height: 44px; }
 }
+
+/* Narrow portrait layouts also need the dock when a browser misreports its pointer type. */
+@media (max-width: 760px) and (orientation: portrait) {
+    #touch-dock { display: flex; }
+    .bench-options #bench-header { bottom: 8.8rem; }
+}
+#update-notice {
+    position: fixed;
+    z-index: 55;
+    top: max(.5rem, env(safe-area-inset-top));
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: calc(100vw - 1rem);
+    padding: .5rem .65rem;
+    border: 1px solid var(--line);
+    border-radius: .5rem;
+    background: var(--ink);
+    color: var(--text);
+    font-size: .85rem;
+}
+#update-notice button { min-height: 44px; margin-inline-start: .4rem; color: var(--amber); }

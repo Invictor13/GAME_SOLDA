@@ -415,7 +415,7 @@ const arcade = (() => {
         profile.last = { mode, index, process, stage, previous, reverse };
         persist();
         loadStructure(Boolean(stage) !== reverse ? job.secondPiece : job.piece);
-        setCameraPreset(job.camera || 1);
+        setCameraPreset(camera.aspect < 1 ? 1 : job.camera || 1);
         if (mode === 'jobs' || mode === 'bench') jobBefore = captureBenchPhoto();
         $('inspect-modal').classList.add('hidden');
         showMenu(false);

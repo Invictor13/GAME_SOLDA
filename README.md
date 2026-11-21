@@ -41,7 +41,7 @@ Em **Workers & Pages → Create → Pages → Connect to Git**, escolha `Invicto
 
 O jogo é servido como arquivos estáticos. O cache offline roda no navegador e as requisições aos arquivos estáticos não usam a cota de Workers do bot. [Preços do Pages](https://developers.cloudflare.com/pages/functions/pricing/)
 
-Para validar uma atualização, conclua uma inspeção, confirme a retomada local, abra o jogo pelo endereço HTTPS e recarregue sem rede após a primeira visita. Depois de publicar uma nova versão do service worker, feche as abas do jogo para que ela possa assumir na próxima abertura. A limpeza atinge os caches do jogo. Os dados salvos ficam no `localStorage` daquele endereço. Ao trocar de domínio, como de GitHub Pages para `pages.dev`, o navegador mantém os dois salvamentos separados.
+Para validar uma atualização, conclua uma inspeção, confirme a retomada local, abra o jogo pelo endereço HTTPS e recarregue sem rede após a primeira visita. Quando uma nova versão estiver disponível, use **Atualizar jogo** para recarregar depois de terminar o passe. A limpeza atinge os caches do jogo. Os dados salvos ficam no `localStorage` daquele endereço. Ao trocar de domínio, como de GitHub Pages para `pages.dev`, o navegador mantém os dois salvamentos separados.
 
 ## Desempenho
 

@@ -1,6 +1,6 @@
 'use strict';
 
-const cacheName = 'welding-master-v11';
+const cacheName = 'welding-master-v12';
 const shell = [
     './', './manifest.webmanifest', './assets/icon-192.png', './assets/icon-512.png',
     './assets/interface.css', './assets/arcade.css', './assets/three.min.js',
@@ -8,7 +8,12 @@ const shell = [
 ].map(path => new URL(path, self.registration.scope).href);
 
 self.addEventListener('install', event => {
-    event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(shell.map(url => new Request(url, { cache: 'reload' })))));
+    event.waitUntil((async () => {
+        const cache = await caches.open(cacheName);
+        await cache.addAll(shell.map(url => new Request(url, { cache: 'reload' })));
+        // Activate the complete release even if an old installed tab remains open.
+        await self.skipWaiting();
+    })());
 });
 
 self.addEventListener('activate', event => {

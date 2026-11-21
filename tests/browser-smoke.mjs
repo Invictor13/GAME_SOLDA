@@ -541,6 +541,7 @@ try {
     }
     await send('ServiceWorker.enable');
     const received = [];
+    let currentRelease = false;
     const mime = { html: 'text/html; charset=utf-8', js: 'text/javascript', css: 'text/css', webmanifest: 'application/manifest+json', png: 'image/png' };
     server = createServer(async (request, response) => {
         const path = new URL(request.url, 'http://localhost').pathname;
@@ -551,7 +552,10 @@ try {
             return;
         }
         try {
-            const bytes = await readFile(new URL('../' + file, import.meta.url));
+            let bytes = await readFile(new URL('../' + file, import.meta.url));
+            if (file === 'sw.js' && !currentRelease) {
+                bytes = bytes.toString().replace('welding-master-v12', 'welding-master-v11').replace('await self.skipWaiting();', '');
+            }
             response.writeHead(200, { 'Content-Type': mime[file.split('.').pop()] }).end(bytes);
         } catch { response.writeHead(404).end(); }
     });
@@ -573,10 +577,14 @@ try {
     await click('.arc-primary');
     const beforeSave = await evaluate('localStorage.getItem("welding-master-arcade-v1")');
     assert.equal(JSON.parse(beforeSave).last.mode, 'career');
+    currentRelease = true;
+    await evaluate("navigator.serviceWorker.getRegistration().then(registration => registration.update())");
+    await until('!document.getElementById("update-notice").hidden', 'An existing tab receives the update notice');
+    assert.equal(await evaluate('localStorage.getItem("welding-master-arcade-v1")'), beforeSave);
     await send('Network.enable');
     await send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
     const beforeOffline = await evaluate('performance.timeOrigin');
-    await send('Page.reload');
+    await click('#update-reload');
     await until('performance.timeOrigin !== ' + beforeOffline + ' && document.readyState === "complete" && Boolean(document.querySelector("#canvas-container canvas")) && document.querySelector("#startup-error").hidden', 'Offline static reload initializes WebGL');
     assert.equal(await evaluate('localStorage.getItem("welding-master-arcade-v1")'), beforeSave);
     assert.equal(await evaluate('document.getElementById("resume-game").hidden'), false);
