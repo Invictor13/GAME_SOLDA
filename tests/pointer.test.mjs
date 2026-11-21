@@ -40,8 +40,8 @@ test('mouse and trackpad preserve the press location, then scale the drag', () =
     assert.deepEqual(points, [[40, 40], [60, 40], [100, 40], [94, 40], [30, 40]]);
 });
 
-test('touch and unpressed mouse aiming keep their original coordinates', () => {
-    const { canvas, view, points, fire } = setup();
+test('armed touch and unpressed mouse aiming keep their original coordinates', () => {
+    const { canvas, view, points, fire } = setup({ touchMode: () => 'weld' });
     fire(view, 'pointermove', 25);
     fire(canvas, 'pointerdown', 40, 'touch');
     fire(view, 'pointermove', 50, 'touch');
@@ -66,4 +66,20 @@ test('a restricted pass cannot ignite off the joint or relight without a new pre
     fire(view, 'pointerup', 40);
     fire(canvas, 'pointerdown', 40);
     assert.equal(events.at(-1), 'start');
+});
+
+
+test('a touch drag moves the camera by default and never arms the arc', () => {
+    const moves = [];
+    let arc = 0;
+    const { canvas, view, fire, points } = setup({
+        navigate: (x, y) => moves.push([x, y]),
+        startArc: () => { arc++; }
+    });
+    fire(canvas, 'pointerdown', 30, 'touch');
+    fire(view, 'pointermove', 53, 'touch');
+    fire(view, 'pointerup', 53, 'touch');
+    assert.deepEqual(moves, [[23, 0]]);
+    assert.deepEqual(points, []);
+    assert.equal(arc, 0);
 });

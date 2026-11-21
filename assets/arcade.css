@@ -200,3 +200,49 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
 }
 #weld-reticle.arc-lit { border-color: #7ef4e0; }
 #weld-reticle.arc-lit::after { background: #7ef4e0; }
+
+#touch-dock { display: none; }
+@media (any-pointer: coarse) {
+    #touch-dock { display: flex; }
+}
+body.touch-detected #touch-dock { display: flex; }
+#touch-dock {
+    max-width: min(95vw, 31rem);
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: .25rem;
+    margin-bottom: .35rem;
+    padding: .35rem;
+    background: #111a22ed;
+    border: 1px solid var(--line);
+    border-radius: .55rem;
+    pointer-events: auto;
+}
+#bench-footer #touch-dock button {
+    min-width: 44px;
+    min-height: 44px;
+    padding: .35rem .5rem;
+    border: 1px solid var(--line);
+    border-radius: .35rem;
+    background: var(--ink);
+    color: var(--text);
+    font-size: .78rem;
+    touch-action: manipulation;
+}
+#bench-footer #touch-dock button[aria-pressed="true"] {
+    border-color: var(--amber);
+    color: var(--amber);
+    background: #362a1a;
+}
+#bench-footer #touch-dock button[data-touch-mode="weld"][aria-pressed="true"] {
+    border-color: #7ef4e0;
+    color: #7ef4e0;
+    background: #143b39;
+}
+#bench-footer:has(#touch-dock) { bottom: max(.45rem, env(safe-area-inset-bottom)); }
+@media (any-pointer: coarse) and (max-width: 760px) {
+    #bench-header { bottom: 8.8rem; }
+    .bench-options #bench-header { bottom: 8.8rem; }
+    #bench-navigation { right: max(.55rem, env(safe-area-inset-right)); top: max(.6rem, env(safe-area-inset-top)); }
+    #bench-navigation button { min-height: 44px; }
+}

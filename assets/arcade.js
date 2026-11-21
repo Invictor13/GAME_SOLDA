@@ -139,7 +139,7 @@ const arcade = (() => {
         workshop.draw(renderer, dt, reduced(), light(), window.innerWidth < 760, profile.finish);
     }
     function showMenu(open = true) {
-        cancelPointer();
+        setTouchMode('pan');
         setControls(false);
         shownMenu = open;
         paused = open;

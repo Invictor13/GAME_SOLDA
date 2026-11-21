@@ -78,7 +78,39 @@ try {
     }
     await send('Runtime.enable');
     await send('Page.enable');
-    if (process.argv.includes('--multipass')) {
+    if (process.argv.includes('--mobile')) {
+        await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+        await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 2 });
+        await send('Page.navigate', { url: new URL('../index.html', import.meta.url).href });
+        await until('Boolean(document.querySelector("#canvas-container canvas")) && document.readyState === "complete"', 'Mobile startup');
+        await click('[data-page=career]');
+        await click('.arc-primary');
+        await until('camState.radius > 12 && camera.position.length() > 12', 'Portrait overview settles');
+        assert.equal(await evaluate(`(() => {
+            return [-4.3, 4.3].every(x => Math.abs(new THREE.Vector3(x, .3, 0).project(camera).x) < .96);
+        })()`), true);
+        assert.equal(await evaluate('document.querySelector("[data-touch-mode=pan]").getAttribute("aria-pressed")'), 'true');
+        const touch = (type, x, y) => send('Input.dispatchTouchEvent', {
+            type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }]
+        });
+        await touch('touchStart', 195, 420);
+        await touch('touchMove', 250, 420);
+        await touch('touchEnd');
+        assert.equal(await evaluate('!isWelding && Math.abs(camState.desiredTarget.x) > .1'), true);
+        await click('[data-touch-zoom=reset]');
+        await until('Math.abs(camState.target.x) < .02', 'Overview recenters');
+        await click('[data-touch-mode=weld]');
+        const point = await evaluate(`(() => {
+            const projected = new THREE.Vector3(0, STRUCTURES[0].baseH(0, 0), 0).project(camera);
+            return { x: (1 + projected.x) * innerWidth / 2, y: (1 - projected.y) * innerHeight / 2 };
+        })()`);
+        await touch('touchStart', point.x, point.y);
+        await until('isWelding', 'Armed touch lights the arc on the groove');
+        await touch('touchEnd');
+        assert.equal(await evaluate('isWelding'), false);
+        assert.deepEqual(uncaught, []);
+        info('Peça enquadrada em 390 × 844, arraste move a bancada, e o arco exige Soldar.');
+    } else if (process.argv.includes('--multipass')) {
         await send('Page.navigate', { url: new URL('../index.html', import.meta.url).href });
         await until('Boolean(document.querySelector("#canvas-container canvas")) && document.readyState === "complete"', 'Multipass startup');
         await click('#first-service');
@@ -499,6 +531,7 @@ try {
         await click('.arc-primary');
         await delay(400);
         const touch = await project(0);
+        await click('[data-touch-mode=weld]');
         await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...touch, id: 1 }] });
         await until('arcade.rodLength() < 99 && isWelding', 'Touch starts and consumes the assisted rod');
         await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
