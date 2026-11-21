@@ -7,7 +7,7 @@ const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const controls = html.slice(html.indexOf('        function bindPointerControls('), html.indexOf('        function evaluateWeld('));
 const bind = runInNewContext(controls + '\nbindPointerControls');
 
-function setup() {
+function setup(options = {}) {
     const canvas = new EventTarget();
     const view = new EventTarget();
     const page = new EventTarget();
@@ -19,7 +19,7 @@ function setup() {
     canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 100, bottom: 100 });
     bind(canvas, {
         aim: (x, y) => (points.push([x, y]), true),
-        startArc() {}, stopArc() {}, orbit() {}, activateAudio() {}, sensitivity: () => 2
+        startArc() {}, stopArc() {}, orbit() {}, activateAudio() {}, sensitivity: () => 2, ...options
     }, { window: view, document: page });
     function fire(target, type, x, pointerType = 'mouse') {
         target.dispatchEvent(Object.assign(new Event(type), {
@@ -46,4 +46,24 @@ test('touch and unpressed mouse aiming keep their original coordinates', () => {
     fire(canvas, 'pointerdown', 40, 'touch');
     fire(view, 'pointermove', 50, 'touch');
     assert.deepEqual(points, [[25, 40], [40, 40], [50, 40]]);
+});
+
+test('a restricted pass cannot ignite off the joint or relight without a new press', () => {
+    const events = [];
+    const { canvas, view, fire } = setup({
+        aim: x => x >= 30 && x <= 50,
+        restrictArc: () => true,
+        startArc: () => events.push('start'),
+        stopArc: () => events.push('stop'),
+        onBlocked: () => events.push('blocked')
+    });
+    fire(canvas, 'pointerdown', 65);
+    fire(canvas, 'pointerdown', 40);
+    fire(view, 'pointermove', 55);
+    assert.equal(canvas.hasPointerCapture(1), false);
+    fire(view, 'pointermove', 40);
+    assert.deepEqual(events, ['blocked', 'start', 'stop', 'blocked']);
+    fire(view, 'pointerup', 40);
+    fire(canvas, 'pointerdown', 40);
+    assert.equal(events.at(-1), 'start');
 });

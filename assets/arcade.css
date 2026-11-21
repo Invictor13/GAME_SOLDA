@@ -160,3 +160,43 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
 .sensitivity-field output { color: var(--amber); font-weight: 700; font-variant-numeric: tabular-nums; }
 .sensitivity-field input { width: 100%; touch-action: pan-y; }
 .sensitivity-field small { color: var(--muted); font-size: .76rem; }
+
+#performance-readout { padding: .7rem; border: 1px solid var(--line); border-radius: .4rem; white-space: pre-wrap; color: var(--muted); font: .75rem/1.45 ui-monospace, monospace; }
+
+.home-career { min-height: 42px; padding: .6rem .95rem; text-align: left; border: 1px solid var(--line); border-radius: .35rem; background: var(--panel); color: var(--text); }
+.home-career span { float: right; color: var(--amber); }
+.job-gallery { margin: 1rem 0; display: grid; gap: .65rem; }
+.job-gallery img { width: 100%; display: block; border-radius: .4rem; }
+.job-gallery figcaption { padding-top: .3rem; color: var(--muted); font-size: .85rem; }
+#delivery-preview:empty { display: none; }
+#delivery-preview canvas { width: 100%; height: auto; border-radius: .4rem; margin-top: .55rem; }
+#inspect-modal { overflow-y: auto; }
+#inspect-modal > .glass-hud { margin-block: auto; }
+
+#weld-reticle {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 12;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #fff3ce;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px #161a20, inset 0 0 0 1px #161a20;
+    pointer-events: none;
+}
+#weld-reticle[hidden] { display: none; }
+#weld-reticle::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background: #fff3ce;
+    box-shadow: 0 0 0 1px #161a20;
+}
+#weld-reticle.arc-lit { border-color: #7ef4e0; }
+#weld-reticle.arc-lit::after { background: #7ef4e0; }

@@ -99,6 +99,7 @@
 
     <!-- Filtro de Máscara de Solda Auto-Escurecimento -->
     <div id="mask-overlay"></div>
+    <div id="weld-reticle" hidden aria-hidden="true"></div>
 
     <!-- HUD SUPERIOR ULTRA-CLEAN (SEM SOBREPOSIÇÃO E SEM CORTES) -->
     <header id="bench-header" aria-label="Controles da bancada" class="fixed top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
@@ -188,6 +189,8 @@
 
             <!-- Ações Principais -->
             <div class="flex flex-wrap items-center justify-center gap-1.5">
+                <button id="joint-view" data-action="setCameraPreset" data-camera="1" class="btn-glow px-3 py-1.5 rounded-xl bg-slate-800/80 text-slate-200 text-xs">Vista da junta</button>
+                <button id="fit-pieces" data-action="fitAssembly" class="hidden btn-glow px-3 py-1.5 rounded-xl bg-amber-500/15 text-amber-300 text-xs font-industrial font-bold">Encaixar peças</button>
                 <button data-action="rotateWorkpiece" id="rotate-pipe-btn" class="hidden btn-glow px-2.5 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-sky-300 text-xs font-industrial font-bold" title="Girar Tubulação (+45°)">
                     ↻ Tubo
                 </button>
@@ -257,6 +260,8 @@
             </div>
             <p id="result-details"></p>
             <p id="result-reward" role="status"></p>
+            <figure id="delivery-preview" aria-label="Antes e depois da peça"></figure>
+            <button id="download-result" data-action="downloadResult" class="hidden game-link">Baixar imagem do resultado ↓</button>
             <div class="flex items-center justify-between gap-2 mt-5">
                 <button data-action="closeInspectAndRetry" class="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-industrial font-bold text-slate-200">Refazer Peça</button>
                 <button id="result-next" data-action="nextStructure" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 text-xs font-industrial font-bold">Próxima Estrutura →</button>
@@ -271,9 +276,11 @@
             <h1>WELDING <br>MASTER <em>3D</em></h1>
         </div>
         <nav id="mode-menu" aria-label="Menu principal">
-            <button class="home-play" data-page="career"><strong>Iniciar carreira</strong><span>→</span></button>
+            <button id="first-service" class="home-play" data-page="jobs"><strong>Jogar primeiro serviço</strong><span>→</span></button>
+            <button class="home-career" data-page="career"><strong>Iniciar carreira</strong><span>→</span></button>
             <div class="home-links">
                 <button data-page="modes"><span class="nav-icon" aria-hidden="true">▦</span> Modos de jogo <span aria-hidden="true">›</span></button>
+                <button data-page="jobs"><span class="nav-icon" aria-hidden="true">▤</span> Ordens de serviço <span aria-hidden="true">›</span></button>
                 <button data-page="workshop"><span class="nav-icon" aria-hidden="true">◇</span> Oficina <span aria-hidden="true">›</span></button>
                 <button data-page="stats"><span class="nav-icon" aria-hidden="true">◉</span> Meu perfil <span aria-hidden="true">›</span></button>
             </div>
@@ -306,13 +313,16 @@
     </div>
 </section>
     <div id="bench-navigation" hidden><button id="bench-toggle" type="button" aria-controls="bench-header" aria-expanded="false">Controles</button><button id="leave-game" type="button">Menu</button></div>
+    <script src="./assets/surface.js"></script>
     <script src="./assets/workshop.js"></script>
     <script src="./assets/campaign.js"></script>
+    <script src="./assets/performance.js"></script>
+    <script src="./assets/delivery.js"></script>
     <script src="./assets/arcade.js"></script>
     <script>
         'use strict';
 
-        function bindPointerControls(canvas, { aim, startArc, stopArc, orbit, activateAudio, sensitivity = () => 1 }, targets = { window, document }) {
+        function bindPointerControls(canvas, { aim, startArc, stopArc, orbit, activateAudio, sensitivity = () => 1, restrictArc = () => false, onBlocked = () => {} }, targets = { window, document }) {
             const { window: view, document: page } = targets;
             let active = null;
 
@@ -330,7 +340,10 @@
                 const { button, pointerId, clientX, clientY } = event;
                 if (active || (button !== 0 && button !== 2)) return;
                 activateAudio();
-                if (button === 0 && !aim(clientX, clientY)) return;
+                if (button === 0 && !aim(clientX, clientY)) {
+                    if (restrictArc()) onBlocked();
+                    return;
+                }
 
                 const gain = button === 0 && event.pointerType === 'mouse' ? sensitivity() : 1;
                 active = { id: pointerId, button, x: clientX, y: clientY, aimX: clientX, aimY: clientY, gain };
@@ -356,15 +369,22 @@
                     orbit(clientX - active.x, clientY - active.y);
                     active.x = clientX;
                     active.y = clientY;
-                } else if (active.gain === 1) {
-                    aim(clientX, clientY);
+                    return;
+                }
+                let valid;
+                if (active.gain === 1) {
+                    valid = aim(clientX, clientY);
                 } else {
                     const bounds = canvas.getBoundingClientRect();
                     active.aimX = Math.max(bounds.left, Math.min(bounds.right, active.aimX + (clientX - active.x) * active.gain));
                     active.aimY = Math.max(bounds.top, Math.min(bounds.bottom, active.aimY + (clientY - active.y) * active.gain));
                     active.x = clientX;
                     active.y = clientY;
-                    aim(active.aimX, active.aimY);
+                    valid = aim(active.aimX, active.aimY);
+                }
+                if (!valid && restrictArc()) {
+                    cancel();
+                    onBlocked();
                 }
             });
 
@@ -403,6 +423,7 @@
         // Sistema de Gaussian Splats Volumétricos (Arco, Plasma, Faíscas, Fumaça)
         const MAX_SPLATS = 900;
         let splatGeometry, splatMaterial, splatPoints;
+        let liveSplats = 0;
         let splatData = [];
         let splatPositions, splatColors, splatSizes, splatOpacities;
         let splatCursor = 0;
@@ -467,6 +488,19 @@
         let aimWorldPos = new THREE.Vector3(0, 0.4, 0);
         let aimNormal = new THREE.Vector3(0, 1, 0);
         let aimUV = { u: 0, v: 0, valid: false };
+        const aimHits = [];
+        const aimTargets = [];
+        const aimLocal = new THREE.Vector3();
+        const aimTravelPoint = new THREE.Vector3();
+        const meshPoint = new THREE.Vector3();
+        const meshSlagPoint = new THREE.Vector3();
+        const simulationClock = WeldingPerformance.makeClock();
+        const stepPoint = new THREE.Vector3();
+        const pathStartPoint = new THREE.Vector3();
+        const previousPoint = new THREE.Vector3();
+        const meshDirty = { u0: Infinity, u1: -1, v0: Infinity, v1: -1 };
+        let aimProxy;
+        let effectsTime = 0;
         let filteredAimPos = new THREE.Vector3(0, 0.4, 0);
         let lastWeldUV = null;
         let lastWeldWorldPos = null;
@@ -492,6 +526,15 @@
         // =========================================================================
         // DEFINIÇÃO DAS 4 ESTRUTURAS INDUSTRIAIS E CHANFROS 3D
         // =========================================================================
+        let assembly = null;
+        let surfaceTarget = null;
+        const surfaceLayers = new Map();
+        const hitNormalWorld = new THREE.Vector3();
+        const referencePoint = new THREE.Vector3();
+        const normalMatrix = new THREE.Matrix3();
+        const surfacePoint = new THREE.Vector3();
+        const surfaceNormal = new THREE.Vector3();
+
         const STRUCTURES = [
             {
                 id: 'v-groove',
@@ -663,6 +706,26 @@
                 }
             }
         ];
+        for (const part of workshopAssemblies) {
+            const joint = assemblyJoint(part);
+            STRUCTURES.push({
+                ...part,
+                spec: 'Encaixe e solde a união',
+                idealAmp: part.amp,
+                isPipe: false,
+                ...joint,
+                uMin: -part.length / 2, uMax: part.length / 2,
+                vMin: -part.depths[0], vMax: part.depths[1], wrapU: false,
+                evalPos: (u, v, h, out) => out.set(u, h, v),
+                evalNormal: (u, v, out) => {
+                    const { rootHalf, grooveHalfWidth } = joint;
+                    return Math.abs(v) > rootHalf && Math.abs(v) < grooveHalfWidth
+                        ? out.set(0, .56, -Math.sign(v)).normalize()
+                        : out.set(0, 1, 0);
+                },
+                worldToUV: point => ({ u: point.x, v: point.z })
+            });
+        }
 
         // =========================================================================
         // TUTORIAL INTERATIVO (3 PASSOS)
@@ -840,6 +903,9 @@
             initGaussianSplats();
             buildWeldingTorch();
             buildElectrodeHolder();
+            keepToolSeeThrough(torchGroup, .23);
+            keepToolSeeThrough(electrodeGroup, .23);
+            rodMesh.material.opacity = .53;
             loadStructure(0);
             setCameraPreset(1);
 
@@ -1015,6 +1081,7 @@
 
             splatPoints = new THREE.Points(splatGeometry, splatMaterial);
             splatPoints.frustumCulled = false;
+            splatPoints.visible = false;
             scene.add(splatPoints);
         }
 
@@ -1023,6 +1090,7 @@
             splatCursor = (splatCursor + 1) % MAX_SPLATS;
 
             const d = splatData[i];
+            if (!d.active) liveSplats++;
             d.active = true;
             d.vx = vel.x;
             d.vy = vel.y;
@@ -1046,6 +1114,8 @@
         }
 
         function updateGaussianSplats(dt) {
+            if (!liveSplats) return;
+            splatPoints.visible = true;
             for (let i = 0; i < MAX_SPLATS; i++) {
                 const d = splatData[i];
                 if (!d.active) continue;
@@ -1053,6 +1123,7 @@
                 d.life += dt;
                 if (d.life >= d.maxLife) {
                     d.active = false;
+                    liveSplats--;
                     splatOpacities[i] = 0;
                     splatSizes[i] = 0;
                     continue;
@@ -1091,6 +1162,7 @@
                 }
             }
 
+            splatPoints.visible = liveSplats > 0;
             splatGeometry.attributes.position.needsUpdate = true;
             splatGeometry.attributes.aColor.needsUpdate = true;
             splatGeometry.attributes.aSize.needsUpdate = true;
@@ -1201,6 +1273,36 @@
             scene.add(electrodeGroup);
         }
 
+        function keepToolSeeThrough(tool, opacity) {
+            tool.traverse(part => {
+                if (!part.isMesh) return;
+                part.material.transparent = true;
+                part.material.opacity = opacity;
+                part.material.depthWrite = false;
+                part.castShadow = false;
+            });
+        }
+
+        const reticle = document.getElementById('weld-reticle');
+        const projectedAim = new THREE.Vector3();
+        function updateWeldReticle() {
+            if (!aimUV.valid || !arcade.allowed()) {
+                reticle.hidden = true;
+                return;
+            }
+            projectedAim.copy(aimWorldPos).project(camera);
+            if (Math.abs(projectedAim.x) > 1 || Math.abs(projectedAim.y) > 1 || Math.abs(projectedAim.z) > 1) {
+                reticle.hidden = true;
+                return;
+            }
+            const canvas = renderer.domElement;
+            const x = (projectedAim.x + 1) * canvas.clientWidth / 2;
+            const y = (1 - projectedAim.y) * canvas.clientHeight / 2;
+            reticle.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`;
+            reticle.classList.toggle('arc-lit', isWelding);
+            reticle.hidden = false;
+        }
+
         function updateTorchPose(worldPos, normal) {
             if (!torchGroup) return;
             // Folga real de arco (arc gap) de 4.5cm acima da superfície + inclinação ergonômica segura
@@ -1218,7 +1320,7 @@
             electrodeGroup.quaternion.slerp(quat, 0.35);
 
             if (moltenPuddleMesh) {
-                moltenPuddleMesh.position.copy(worldPos).addScaledVector(normal, 0.015);
+                moltenPuddleMesh.position.copy(aimWorldPos).addScaledVector(normal, 0.015);
                 moltenPuddleMesh.quaternion.setFromUnitVectors(upVec, normal);
             }
         }
@@ -1226,6 +1328,18 @@
         // =========================================================================
         // CONSTRUÇÃO DAS 4 ESTRUTURAS METÁLICAS E GUIA HOLOGRÁFICO
         // =========================================================================
+        function disposePart(object) {
+            const geometries = new Set();
+            const materials = new Set();
+            object.traverse(node => {
+                if (node.isInstancedMesh) node.dispose?.();
+                if (node.geometry) geometries.add(node.geometry);
+                if (node.material) for (const material of [].concat(node.material)) materials.add(material);
+            });
+            geometries.forEach(geometry => geometry.dispose());
+            materials.forEach(material => material.dispose());
+        }
+
         function clearGroup(grp) {
             while (grp.children.length > 0) {
                 const obj = grp.children[0];
@@ -1239,6 +1353,14 @@
         }
 
         function loadStructure(index) {
+            simulationClock.reset();
+            WeldingPerformance.clearInput();
+            if (aimProxy) {
+                workpieceGroup.remove(aimProxy);
+                aimProxy.geometry.dispose();
+                aimProxy.material.dispose();
+                aimProxy = null;
+            }
             cancelPointer();
             currentLevel = (index + STRUCTURES.length) % STRUCTURES.length;
             const spec = STRUCTURES[currentLevel];
@@ -1248,11 +1370,14 @@
                 const child = workpieceGroup.children[i];
                 if (child !== weldBeadsGroup && child !== slagGroup && child !== guideGroup) {
                     workpieceGroup.remove(child);
-                    if (child.geometry) child.geometry.dispose();
-                    if (child.material) child.material.dispose();
+                    disposePart(child);
                 }
             }
 
+            surfaceLayers.clear();
+            surfaceTarget = null;
+            assembly = null;
+            document.getElementById('fit-pieces').classList.add('hidden');
             clearGroup(weldBeadsGroup);
             clearGroup(slagGroup);
             clearGroup(fallingSlagGroup);
@@ -1442,6 +1567,34 @@
                 subBase.position.set(0, 0.03, 0);
                 plateMeshes.add(subBase);
 
+            } else if (spec.depths) {
+                const parts = spec.depths.map((depth, index) => {
+                    const mesh = new THREE.Mesh(makeAssemblyPartGeometry(spec, index), index ? bevelMat : steelMat);
+                    mesh.position.set(index ? .28 : -.28, spec.height / 2, (index ? 1 : -1) * (depth / 2 + .34));
+                    mesh.castShadow = mesh.receiveShadow = true;
+                    plateMeshes.add(mesh);
+                    const service = arcade.current();
+                    if (service?.mode === 'jobs') {
+                        if (service.index === 0 && index === 0) {
+                            // A aba vertical dá ao suporte montado o perfil de cantoneira.
+                            const lip = new THREE.Mesh(new THREE.BoxGeometry(spec.length, .61, .23), mesh.material);
+                            lip.position.set(0, .46, (index ? 1 : -1) * (depth / 2 - .13));
+                            lip.castShadow = lip.receiveShadow = true;
+                            mesh.add(lip);
+                        } else if (service.index === 1 && spec.id === 'bar-pair') {
+                            // Travessas curtas nas extremidades dão ao conjunto a silhueta da moldura.
+                            for (const x of [-spec.length / 2 + .25, spec.length / 2 - .25]) {
+                                const rail = new THREE.Mesh(new THREE.BoxGeometry(.5, spec.height, .95), mesh.material);
+                                rail.position.set(x, 0, (index ? 1 : -1) * (depth / 2 + .39));
+                                rail.castShadow = rail.receiveShadow = true;
+                                mesh.add(rail);
+                            }
+                        }
+                    }
+                    return mesh;
+                });
+                backingMat.dispose();
+                assembly = { parts, aligned: false, joined: false };
             } else if (spec.id === 'pipe-bevel') {
                 // Dois tubos industriais biselados a 37.5° centrados em Y = 1.55, eixo X
                 const cy = spec.pipeCenterY;
@@ -1479,6 +1632,14 @@
                 rootRing.rotation.z = Math.PI / 2;
                 rootRing.position.set(0, cy, 0);
                 plateMeshes.add(rootRing);
+                const service = arcade.current();
+                if (service?.mode === 'jobs' && service.index === 2) {
+                    const flange = new THREE.Mesh(new THREE.CylinderGeometry(1.46, 1.46, .17, 32), steelMat);
+                    flange.rotation.z = Math.PI / 2;
+                    flange.position.set(-2.47, cy, 0);
+                    flange.castShadow = flange.receiveShadow = true;
+                    plateMeshes.add(flange);
+                }
             }
 
             workpieceGroup.add(plateMeshes);
@@ -1488,11 +1649,24 @@
 
             // Inicializa a malha conformal de poça líquida + casca de escória 3D
             initWeldField(spec);
+            buildAimTargets(spec, plateMeshes);
+            if (assembly) {
+                weldBeadsGroup.visible = false;
+                guideGroup.visible = false;
+                const fit = document.getElementById('fit-pieces');
+                fit.textContent = 'Encaixar peças';
+                fit.disabled = false;
+                fit.classList.remove('hidden');
+            } else {
+                weldBeadsGroup.visible = true;
+                guideGroup.visible = true;
+            }
 
             // Ajusta o centro da câmera conforme a estrutura
             camState.desiredTarget.set(0, spec.isPipe ? 1.55 : (spec.id === 't-fillet' ? 0.55 : 0.35), 0);
             setCameraPreset(camState.preset);
-            updateHUDMetrics();
+            displayedVolume = 0;
+            updateHUDMetrics(0);
         }
 
         function buildGrooveHologram(spec) {
@@ -1626,11 +1800,11 @@
             }
 
             const geo = new THREE.BufferGeometry();
-            geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-            geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-            geo.setAttribute('aEmissive', new THREE.BufferAttribute(emissives, 3));
-            geo.setAttribute('aRipple', new THREE.BufferAttribute(ripplesAttr, 1));
+            geo.setAttribute('position', new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
+            geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3).setUsage(THREE.DynamicDrawUsage));
+            geo.setAttribute('color', new THREE.BufferAttribute(colors, 3).setUsage(THREE.DynamicDrawUsage));
+            geo.setAttribute('aEmissive', new THREE.BufferAttribute(emissives, 3).setUsage(THREE.DynamicDrawUsage));
+            geo.setAttribute('aRipple', new THREE.BufferAttribute(ripplesAttr, 1).setUsage(THREE.DynamicDrawUsage));
             geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
             geo.setIndex(indices);
 
@@ -1689,10 +1863,10 @@
 
             // Malha 3D DEDICADA para a Casca de Escória (camada sólida elevada que abraça toda a geometria do cordão!)
             const slagGeo = new THREE.BufferGeometry();
-            slagGeo.setAttribute('position', new THREE.BufferAttribute(slagPositions, 3));
-            slagGeo.setAttribute('normal', new THREE.BufferAttribute(slagNormals, 3));
-            slagGeo.setAttribute('aSlagAlpha', new THREE.BufferAttribute(slagAlphas, 1));
-            slagGeo.setAttribute('aSlagHeat', new THREE.BufferAttribute(slagHeats, 1));
+            slagGeo.setAttribute('position', new THREE.BufferAttribute(slagPositions, 3).setUsage(THREE.DynamicDrawUsage));
+            slagGeo.setAttribute('normal', new THREE.BufferAttribute(slagNormals, 3).setUsage(THREE.DynamicDrawUsage));
+            slagGeo.setAttribute('aSlagAlpha', new THREE.BufferAttribute(slagAlphas, 1).setUsage(THREE.DynamicDrawUsage));
+            slagGeo.setAttribute('aSlagHeat', new THREE.BufferAttribute(slagHeats, 1).setUsage(THREE.DynamicDrawUsage));
             slagGeo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
             slagGeo.setIndex(indices);
 
@@ -1753,13 +1927,14 @@
             slagShellMesh.receiveShadow = true;
             slagShellMesh.castShadow = true;
             slagShellMesh.frustumCulled = false;
+            slagShellMesh.visible = false;
             slagGroup.add(slagShellMesh);
 
             weldField = {
                 spec, uTable, vTable,
                 baseH, solidH, liquidH, dLiquid, temp, dTemp, ripple, burn, slagCover, wasMolten,
                 geo, positions, normals, colors, emissives, ripplesAttr,
-                slagGeo, slagPositions, slagNormals, slagAlphas, slagHeats,
+                slagGeo, slagPositions, slagNormals, slagAlphas, slagHeats, slagVertices: 0,
                 activeMinU: FIELD_NU, activeMaxU: -1,
                 activeMinV: FIELD_NV, activeMaxV: -1
             };
@@ -1784,18 +1959,15 @@
             };
         }
 
-        function stepWeldPhysics(dt) {
+        function stepWeldPhysics(dt, curU, curV, logicalPoint) {
             const f = weldField;
             if (!f) return;
             const s = f.spec;
 
             // 1. Se o jogador está soldando, injeta energia térmica e metal líquido ao longo do traço contínuo
-            if (isWelding && aimUV.valid) {
-                const curU = aimUV.u;
-                const curV = aimUV.v;
-
+            if (isWelding && aimUV.valid && !surfaceTarget) {
                 // Calcula velocidade real em unidades do mundo
-                const worldDist = lastWeldWorldPos ? filteredAimPos.distanceTo(lastWeldWorldPos) : 0;
+                const worldDist = lastWeldWorldPos ? logicalPoint.distanceTo(lastWeldWorldPos) : 0;
                 const instSpeed = dt > 0.0001 ? worldDist / dt : 0;
                 weldSpeedSmooth = THREE.MathUtils.lerp(weldSpeedSmooth, instSpeed, Math.min(1, dt * 10));
 
@@ -1886,20 +2058,26 @@
                                 f.slagCover[idx] = Math.max(0, f.slagCover[idx] - dtSub * 4.5);
                             }
 
-                            // Se a região atingir fusão, re-liquefaz levemente a crosta superior para fundir camadas sem montanhas!
-                            if (f.temp[idx] >= T_MELT) {
+                            const solid = f.solidH[idx];
+                            const fused = f.temp[idx] >= T_MELT;
+                            // Um passe de enchimento aquece e liga a superfície do cordão anterior.
+                            // O núcleo já solidificado permanece abaixo da poça.
+                            if (fused) {
                                 f.wasMolten[idx] = 1;
-                                const remelt = Math.min(f.solidH[idx], 0.08 * dtSub * gHeat);
+                                const remelt = Math.min(solid * .06, .035 * dtSub * gHeat);
                                 f.solidH[idx] -= remelt;
                                 f.liquidH[idx] += remelt;
-
-                                // Limite elegante de altura por camada (evita montanhas destroçadas ao passar por cima)
+                            }
+                            const bonding = fused ? 1 : solid >= .018 && gHeat >= .35
+                                ? THREE.MathUtils.clamp((f.temp[idx] / T_MELT - .72) / .28, 0, 1) : 0;
+                            if (bonding > 0) {
                                 const totalMetal = f.solidH[idx] + f.liquidH[idx];
-                                const maxCap = Math.abs(vCell) <= s.grooveHalfWidth ? (s.targetFillThickness * 1.48) : 0.24;
-                                if (totalMetal < maxCap) {
-                                    const capSoft = THREE.MathUtils.clamp((maxCap - totalMetal) / 0.14, 0.12, 1.0);
-                                    f.liquidH[idx] += gMass * depositRate * dtSub * capSoft;
-                                }
+                                const maxCap = s.depths ? s.height - f.baseH[idx] + .045
+                                    : Math.abs(vCell) <= s.grooveHalfWidth ? s.targetFillThickness * 1.48 : .24;
+                                const headroom = Math.max(0, maxCap - totalMetal);
+                                const capSoft = THREE.MathUtils.clamp(headroom / .10, .16, 1);
+                                f.liquidH[idx] += Math.min(headroom, gMass * depositRate * dtSub * capSoft * bonding);
+                                if (headroom > 0) f.wasMolten[idx] = 1;
                             }
 
                             // Marca dano térmico se superaquecer muito
@@ -1937,28 +2115,22 @@
                 const points = arcade.sample(curU, curV, dt, inGroove, weldSpeedSmooth);
                 if (heatLevel < 98 && !arcade.isZen()) score += points;
 
-                // Emite Gaussian Splats do arco elétrico, faíscas e fumaça
-                emitArcSplats(filteredAimPos, aimNormal);
-
-                // Atualiza status de velocidade na HUD
-                updateSpeedIndicator(weldSpeedSmooth, true);
-
-                lastWeldUV = { u: curU, v: curV };
-                if (!lastWeldWorldPos) lastWeldWorldPos = filteredAimPos.clone();
-                else lastWeldWorldPos.copy(filteredAimPos);
+                lastWeldUV ??= { u: 0, v: 0 };
+                lastWeldUV.u = curU;
+                lastWeldUV.v = curV;
+                lastWeldWorldPos = previousPoint.copy(logicalPoint);
             } else {
                 // Resfriamento global do medidor de calor quando arco está desligado
                 heatLevel = Math.max(0, heatLevel - dt * 18);
                 dwellTime = Math.max(0, dwellTime - dt * 3);
                 puddleRadiusFactor = THREE.MathUtils.lerp(puddleRadiusFactor, 1.0, dt * 6);
-                updateSpeedIndicator(0, false);
                 lastWeldUV = null;
                 lastWeldWorldPos = null;
             }
 
             // 2. Evolução Contínua da Poça Líquida (Tensão Superficial + Gravidade + Resfriamento + Solidificação)
             if (f.activeMaxU >= f.activeMinU && f.activeMaxV >= f.activeMinV) {
-                const iu0 = Math.max(1, f.activeMinU);
+                const iu0 = Math.max(s.wrapU ? 0 : 1, f.activeMinU);
                 const iu1 = Math.min(FIELD_NU - 2, f.activeMaxU);
                 const iv0 = Math.max(1, f.activeMinV);
                 const iv1 = Math.min(FIELD_NV - 2, f.activeMaxV);
@@ -1973,13 +2145,15 @@
                 }
 
                 // Escoamento da poça líquida (tensão superficial nivela o cordão e une paredes do chanfro sem degraus!)
-                const flowRate = 6.2 * dt;
+                const flowRate = 4.6 * dt;
                 const thermalDiff = 1.65 * dt;
 
                 for (let iu = iu0; iu <= iu1; iu++) {
                     const row = iu * FIELD_NV;
-                    const rowPrev = (iu - 1) * FIELD_NV;
-                    const rowNext = (iu + 1) * FIELD_NV;
+                    const prevU = s.wrapU && iu === 0 ? FIELD_NU - 2 : iu - 1;
+                    const rowPrev = prevU * FIELD_NV;
+                    const nextU = s.wrapU && iu === FIELD_NU - 2 ? 0 : iu + 1;
+                    const rowNext = nextU * FIELD_NV;
 
                     for (let iv = iv0; iv <= iv1; iv++) {
                         const idx = row + iv;
@@ -1994,31 +2168,20 @@
                         if (liq > 0.0005 && T >= T_MELT * 0.92) {
                             // Altura total da superfície livre (baseH + solidH + liquidH)
                             const hC = f.baseH[idx] + f.solidH[idx] + liq;
-                            const nIdx0 = rowPrev + iv;
-                            const nIdx1 = rowNext + iv;
-                            const nIdx2 = idx - 1;
-                            const nIdx3 = idx + 1;
-
-                            const h0 = f.baseH[nIdx0] + f.solidH[nIdx0] + f.liquidH[nIdx0];
-                            const h1 = f.baseH[nIdx1] + f.solidH[nIdx1] + f.liquidH[nIdx1];
-                            const h2 = f.baseH[nIdx2] + f.solidH[nIdx2] + f.liquidH[nIdx2];
-                            const h3 = f.baseH[nIdx3] + f.solidH[nIdx3] + f.liquidH[nIdx3];
-
-                            // Escoa somente para vizinhos quentes ou mais baixos (mantém poça coesa com menisco natural)
-                            const maxOut = liq * 0.20;
-                            const pushNeighbor = (nIdx, hN) => {
-                                const dh = hC - hN;
-                                if (dh > 0.006) {
-                                    const mob = f.temp[nIdx] > 0.35 ? 1.0 : 0.32;
-                                    const flux = Math.min(maxOut, dh * flowRate * mob);
-                                    f.dLiquid[idx] -= flux;
-                                    f.dLiquid[nIdx] += flux;
-                                }
-                            };
-                            pushNeighbor(nIdx0, h0);
-                            pushNeighbor(nIdx1, h1);
-                            pushNeighbor(nIdx2, h2);
-                            pushNeighbor(nIdx3, h3);
+                            const maxOut = liq * .13;
+                            for (let neighbor = 0; neighbor < 4; neighbor++) {
+                                // Só transfere para células que serão integradas e conservadas neste passo.
+                                if ((neighbor === 0 && prevU < iu0) || (neighbor === 0 && prevU > iu1)
+                                    || (neighbor === 1 && nextU > iu1) || (neighbor === 1 && nextU < iu0)
+                                    || (neighbor === 2 && iv === iv0) || (neighbor === 3 && iv === iv1)) continue;
+                                const n = neighbor === 0 ? rowPrev + iv : neighbor === 1 ? rowNext + iv : neighbor === 2 ? idx - 1 : idx + 1;
+                                const difference = hC - (f.baseH[n] + f.solidH[n] + f.liquidH[n]);
+                                if (difference <= 0.006) continue;
+                                const mobility = f.temp[n] > 0.35 ? 1.0 : 0.32;
+                                const flux = Math.min(maxOut, difference * flowRate * mobility);
+                                f.dLiquid[idx] -= flux;
+                                f.dLiquid[n] += flux;
+                            }
                         }
                     }
                 }
@@ -2034,10 +2197,10 @@
                         // Resfriamento realista (~1.3s em estado líquido amarelo-dourado)
                         let T = Math.max(0, f.temp[idx] + f.dTemp[idx] - (0.34 + f.temp[idx] * 0.24) * dt);
 
-                        if (T > 0.06 || liq > 0.0005) stillWarm = true;
+                        if (T > .06 || liq > 0) stillWarm = true;
 
                         // Borda traseira da poça solidifica quando cai abaixo de T_MELT
-                        if (T < T_MELT && liq > 0.0001) {
+                        if (T < T_MELT && liq > 0) {
                             const freezeAmt = Math.min(liq, liq * Math.min(1, dt * 6.5) + 0.012 * dt);
                             liq -= freezeAmt;
                             f.solidH[idx] += freezeAmt;
@@ -2046,7 +2209,7 @@
                                 f.wasMolten[idx] = 0;
                                 // Grava a crista/vale da escama acompanhando a curva exata da poça nesse instante!
                                 const wave = Math.sin(solidificationPhase);
-                                f.ripple[idx] = THREE.MathUtils.clamp(f.ripple[idx] * 0.22 + wave * 0.95, -1.0, 1.0);
+                                f.ripple[idx] = THREE.MathUtils.clamp(f.ripple[idx] * .70 + wave * .30, -1.0, 1.0);
 
                                 // Forma casca de escória 3D contínua sobre todo o cordão recém-solidificado
                                 if (f.solidH[idx] > 0.018 && f.burn[idx] < 0.65) {
@@ -2061,7 +2224,7 @@
                     }
                 }
 
-                refreshWeldMeshRegion(
+                queueWeldMesh(
                     Math.max(0, iu0 - 1),
                     Math.min(FIELD_NU - 1, iu1 + 1),
                     Math.max(0, iv0 - 1),
@@ -2078,12 +2241,56 @@
             }
         }
 
+        function queueWeldMesh(u0, u1, v0, v1) {
+            meshDirty.u0 = Math.min(meshDirty.u0, u0);
+            meshDirty.u1 = Math.max(meshDirty.u1, u1);
+            meshDirty.v0 = Math.min(meshDirty.v0, v0);
+            meshDirty.v1 = Math.max(meshDirty.v1, v1);
+        }
+
+        function runSimulation(seconds, spec) {
+            const ticks = simulationClock.take(seconds);
+            const u = lastWeldUV?.u ?? aimUV.u;
+            const v = lastWeldUV?.v ?? aimUV.v;
+            let deltaU = aimUV.u - u;
+            if (spec.wrapU && Math.abs(deltaU) > Math.PI) deltaU -= Math.sign(deltaU) * 2 * Math.PI;
+            pathStartPoint.copy(lastWeldWorldPos || aimTravelPoint);
+            let mark = WeldingPerformance.now();
+            for (let i = 1; i <= ticks; i++) {
+                const t = i / ticks;
+                let stepU = u + t * deltaU;
+                if (spec.wrapU && Math.abs(stepU) > Math.PI) stepU -= Math.sign(stepU) * 2 * Math.PI;
+                const stepV = v + t * (aimUV.v - v);
+                stepPoint.lerpVectors(pathStartPoint, aimTravelPoint, t);
+                if (isWelding && aimUV.valid && surfaceTarget) {
+                    let layer = surfaceLayers.get(surfaceTarget);
+                    if (!layer) {
+                        layer = createSurfaceBeads(surfaceTarget);
+                        surfaceLayers.set(surfaceTarget, layer);
+                    }
+                    layer.deposit(surfacePoint, surfaceNormal, amperage);
+                    totalSamplesDeposited += WeldingPerformance.STEP * 20;
+                    combo = Math.max(1, combo - WeldingPerformance.STEP * .6);
+                }
+                stepWeldPhysics(WeldingPerformance.STEP, stepU, stepV, stepPoint);
+            }
+            for (const layer of surfaceLayers.values()) layer.cool(ticks * WeldingPerformance.STEP);
+            WeldingPerformance.timed('physics', mark);
+            mark = WeldingPerformance.now();
+            if (meshDirty.u1 >= meshDirty.u0) {
+                refreshWeldMeshRegion(meshDirty.u0, meshDirty.u1, meshDirty.v0, meshDirty.v1);
+                meshDirty.u0 = meshDirty.v0 = Infinity;
+                meshDirty.u1 = meshDirty.v1 = -1;
+            }
+            WeldingPerformance.timed('geometry', mark);
+        }
+
         // Atualiza geometria 3D, relevo de escamas, cor metálica TIG/MIG, brilho de corpo negro e casca 3D na malha
         function refreshWeldMeshRegion(iuMin, iuMax, ivMin, ivMax) {
             const f = weldField;
             const s = f.spec;
-            const tmpP = new THREE.Vector3();
-            const tmpSlagP = new THREE.Vector3();
+            const tmpP = meshPoint;
+            const tmpSlagP = meshSlagPoint;
 
             // Se tubulação (wrapU), garante que a costura final (FIELD_NU - 1) copie a coluna 0
             const syncSeam = s.wrapU;
@@ -2115,7 +2322,7 @@
                     } else {
                         const blendIn = Math.min(1.0, (metal - 0.0025) / 0.014);
                         // Relevo físico pronunciado das escamas para capturar reflexos metálicos nítidos
-                        const rippleBump = rip * Math.min(0.022, metal * 0.28);
+                        const rippleBump = rip * Math.min(.009, metal * .12);
                         hSurf = f.baseH[srcIdx] + THREE.MathUtils.lerp(-0.011, metal + rippleBump, blendIn);
                     }
 
@@ -2131,6 +2338,7 @@
                     f.slagPositions[dstIdx * 3] = tmpSlagP.x;
                     f.slagPositions[dstIdx * 3 + 1] = tmpSlagP.y;
                     f.slagPositions[dstIdx * 3 + 2] = tmpSlagP.z;
+                    f.slagVertices += Number(activeSlag > 0) - Number(f.slagAlphas[dstIdx] > 0);
                     f.slagAlphas[dstIdx] = activeSlag;
                     f.slagHeats[dstIdx] = activeSlag > 0.01 ? THREE.MathUtils.clamp((T - 0.16) / (T_MELT - 0.16), 0, 1) : 0;
 
@@ -2203,7 +2411,7 @@
             }
 
             // 2. Recalcula normais suaves por diferenças centrais (escamas 3D reais + casca de escória refletem a oficina!)
-            const nuNorm0 = Math.max(1, uStartPos);
+            const nuNorm0 = syncSeam ? 0 : Math.max(1, uStartPos);
             const nuNorm1 = Math.min(FIELD_NU - 2, uEndPos);
             const nvNorm0 = Math.max(1, ivMin);
             const nvNorm1 = Math.min(FIELD_NV - 2, ivMax);
@@ -2213,7 +2421,7 @@
 
             for (let iu = nuNorm0; iu <= nuNorm1; iu++) {
                 const row = iu * FIELD_NV;
-                const rowPrev = (iu - 1) * FIELD_NV;
+                const rowPrev = (syncSeam && iu === 0 ? FIELD_NU - 2 : iu - 1) * FIELD_NV;
                 const rowNext = (iu + 1) * FIELD_NV;
                 for (let iv = nvNorm0; iv <= nvNorm1; iv++) {
                     const idx = row + iv;
@@ -2250,16 +2458,30 @@
                 }
             }
 
-            f.geo.attributes.position.needsUpdate = true;
-            f.geo.attributes.normal.needsUpdate = true;
-            f.geo.attributes.color.needsUpdate = true;
-            f.geo.attributes.aEmissive.needsUpdate = true;
-            f.geo.attributes.aRipple.needsUpdate = true;
+            if (syncSeam) {
+                const seam = (FIELD_NU - 1) * FIELD_NV * 3;
+                const start = nvNorm0 * 3;
+                const end = (nvNorm1 + 1) * 3;
+                N.copyWithin(seam + start, start, end);
+                SN.copyWithin(seam + start, start, end);
+            }
 
-            f.slagGeo.attributes.position.needsUpdate = true;
-            f.slagGeo.attributes.normal.needsUpdate = true;
-            f.slagGeo.attributes.aSlagAlpha.needsUpdate = true;
-            f.slagGeo.attributes.aSlagHeat.needsUpdate = true;
+            slagShellMesh.visible = f.slagVertices > 0;
+            const start = uStartPos * FIELD_NV + ivMin;
+            const end = uEndPos * FIELD_NV + ivMax + 1;
+            for (const geometry of [f.geo, f.slagGeo]) {
+                for (const attr of Object.values(geometry.attributes)) {
+                    if (attr === geometry.attributes.uv) continue;
+                    const offset = start * attr.itemSize;
+                    const limit = end * attr.itemSize;
+                    const range = attr.updateRange;
+                    // Three r128 permite uma faixa contígua por atributo. Una mudanças anteriores ainda não renderizadas.
+                    const previousEnd = range.count >= 0 ? range.offset + range.count : limit;
+                    range.offset = range.count >= 0 ? Math.min(range.offset, offset) : offset;
+                    range.count = Math.max(previousEnd, limit) - range.offset;
+                    attr.needsUpdate = true;
+                }
+            }
         }
 
         // =========================================================================
@@ -2545,51 +2767,96 @@
         // =========================================================================
         // RAYCASTING CONFORMAL DA MIRA (ZERO PERDA ENTRE FACES E ÂNGULOS)
         // =========================================================================
+        function buildAimTargets(spec, plates) {
+            const positions = [];
+            const indices = [];
+            const point = new THREE.Vector3();
+            const cols = 48;
+            const rows = 16;
+            const half = spec.grooveHalfWidth * 1.15;
+            for (let i = 0; i <= cols; i++) {
+                const u = THREE.MathUtils.lerp(spec.uMin, spec.uMax, i / cols);
+                for (let j = 0; j <= rows; j++) {
+                    const v = THREE.MathUtils.lerp(-half, half, j / rows);
+                    spec.evalPos(u, v, spec.baseH(u, v), point);
+                    positions.push(point.x, point.y, point.z);
+                    if (i < cols && j < rows) {
+                        const a = i * (rows + 1) + j;
+                        const b = a + rows + 1;
+                        indices.push(a, b, a + 1, b, b + 1, a + 1);
+                    }
+                }
+            }
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geo.setIndex(indices);
+            aimProxy = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, visible: false }));
+            workpieceGroup.add(aimProxy);
+            aimTargets.length = 0;
+            if (!assembly) aimTargets.push(aimProxy);
+            plates.traverse(node => { if (node.isMesh) aimTargets.push(node); });
+            workpieceGroup.updateMatrixWorld(true);
+        }
+
         function updateAimFromPointer(clientX, clientY) {
+            const mark = WeldingPerformance.now();
             const rect = renderer.domElement.getBoundingClientRect();
             mouseNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
             mouseNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-
             raycaster.setFromCamera(mouseNDC, camera);
-
-            // Intersecta as chapas reais da estrutura (ignora casca e guia para nunca pular sobre escória!)
-            const targets = [];
-            workpieceGroup.children.forEach(c => {
-                if (c.name === 'WorkpiecePlates') targets.push(c);
-            });
-            if (weldSurfaceMesh) targets.push(weldSurfaceMesh);
-
-            const hits = raycaster.intersectObjects(targets, true);
-            if (hits.length > 0) {
-                const hit = hits[0];
+            aimHits.length = 0;
+            raycaster.intersectObjects(aimTargets, false, aimHits);
+            const previousSurface = surfaceTarget;
+            surfaceTarget = null;
+            aimUV.valid = false;
+            if (aimHits.length && weldField) {
+                const hit = aimHits[0];
                 const spec = STRUCTURES[currentLevel];
-
-                // Converte o ponto de impacto para o espaço local de workpieceGroup (fundamental para o tubo rotacionado!)
-                const localPt = workpieceGroup.worldToLocal(hit.point.clone());
-                const uv = spec.worldToUV(localPt);
-
-                // Verifica se está dentro dos limites úteis da peça
-                const inBounds = (spec.wrapU || (uv.u >= spec.uMin && uv.u <= spec.uMax)) &&
-                                 (uv.v >= spec.vMin && uv.v <= spec.vMax);
-
-                if (inBounds && weldField) {
-                    const g = uvToGridIndices(uv.u, uv.v);
+                const local = workpieceGroup.worldToLocal(aimLocal.copy(hit.point));
+                const uv = spec.worldToUV(local);
+                const inField = (spec.wrapU || (uv.u >= spec.uMin && uv.u <= spec.uMax)) && uv.v >= spec.vMin && uv.v <= spec.vMax;
+                const support = arcade.controlProfile().assist;
+                spec.evalPos(uv.u, uv.v, spec.baseH(uv.u, uv.v), referencePoint);
+                const onJoint = (!assembly || assembly.aligned) && inField
+                    && Math.abs(uv.v) <= spec.grooveHalfWidth * 1.08
+                    && (hit.object === aimProxy || referencePoint.distanceToSquared(local) < .053);
+                if (onJoint) {
+                    const v = uv.v * (1 - support);
+                    const g = uvToGridIndices(uv.u, v);
                     const idx = g.iu * FIELD_NV + g.iv;
-                    const surfH = weldField.baseH[idx] + weldField.solidH[idx] + weldField.liquidH[idx];
-
-                    const exactLocalPos = new THREE.Vector3();
-                    const exactLocalNorm = new THREE.Vector3();
-                    spec.evalPos(uv.u, uv.v, surfH, exactLocalPos);
-                    spec.evalNormal(uv.u, uv.v, exactLocalNorm);
-
-                    aimWorldPos.copy(exactLocalPos).applyMatrix4(workpieceGroup.matrixWorld);
-                    aimNormal.copy(exactLocalNorm).transformDirection(workpieceGroup.matrixWorld).normalize();
-                    aimUV = { u: uv.u, v: uv.v, valid: true };
+                    const height = weldField.baseH[idx] + weldField.solidH[idx] + weldField.liquidH[idx];
+                    spec.evalPos(uv.u, v, spec.baseH(uv.u, v), aimTravelPoint);
+                    spec.evalPos(uv.u, v, height, aimWorldPos).applyMatrix4(workpieceGroup.matrixWorld);
+                    spec.evalNormal(uv.u, v, aimNormal).transformDirection(workpieceGroup.matrixWorld);
+                    aimUV.u = uv.u;
+                    aimUV.v = v;
+                } else if (arcade.isZen() && hit.object !== aimProxy) {
+                    surfaceTarget = hit.object;
+                    surfacePoint.copy(hit.point);
+                    surfaceTarget.worldToLocal(surfacePoint);
+                    surfaceNormal.copy(hit.face.normal);
+                    hitNormalWorld.copy(surfaceNormal).applyNormalMatrix(normalMatrix.getNormalMatrix(hit.object.matrixWorld));
+                    aimWorldPos.copy(hit.point);
+                    aimNormal.copy(hitNormalWorld);
+                    aimUV.u = uv.u;
+                    aimUV.v = uv.v;
+                }
+                aimUV.valid = onJoint || surfaceTarget !== null;
+                if (aimUV.valid) {
                     hasValidAim = true;
-                    return;
+                    WeldingPerformance.input(mark);
                 }
             }
-            aimUV.valid = false;
+            if (previousSurface !== surfaceTarget) {
+                surfaceLayers.get(previousSurface)?.breakStroke();
+                lastWeldUV = null;
+                lastWeldWorldPos = null;
+            }
+            if (!aimUV.valid) {
+                lastWeldUV = null;
+                lastWeldWorldPos = null;
+            }
+            WeldingPerformance.timed('raycast', mark);
         }
 
         // =========================================================================
@@ -2680,7 +2947,7 @@
                 aim(x, y) {
                     if (!arcade.allowed()) return false;
                     updateAimFromPointer(x, y);
-                    return aimUV.valid && Math.abs(aimUV.v) <= STRUCTURES[currentLevel].grooveHalfWidth * 1.08;
+                    return aimUV.valid;
                 },
                 startArc() {
                     filteredAimPos.copy(aimWorldPos);
@@ -2688,6 +2955,7 @@
                 },
                 stopArc() {
                     arcade.stop();
+                    surfaceLayers.get(surfaceTarget)?.breakStroke();
                     lastWeldUV = null;
                     lastWeldWorldPos = null;
                     flushPendingSlagPatch();
@@ -2697,7 +2965,12 @@
                     camState.phi = THREE.MathUtils.clamp(camState.phi - dy * 0.0055, 0.08, 1.48);
                 },
                 activateAudio: initAudio,
-                sensitivity: arcade.sensitivity
+                sensitivity: arcade.sensitivity,
+                restrictArc: () => !arcade.isZen(),
+                onBlocked() {
+                    showLiveFeedback(assembly && !assembly.aligned ? 'Encaixe as peças antes de soldar a união.'
+                        : 'Arco interrompido. Pressione novamente na junta.', 'text-amber-300');
+                }
             });
 
             function resetPan() {
@@ -2806,7 +3079,12 @@
             const now = audioCtx.currentTime;
             const targetVol = (active && soundEnabled) ? THREE.MathUtils.clamp((amperage / 140) * 0.16 * arcade.stability(), 0.03, 0.22) : 0.0;
             arcGainNode.gain.setTargetAtTime(targetVol, now, 0.03);
-            if (arcFilterNode) arcFilterNode.frequency.setTargetAtTime(arcade.electrode() ? arcade.physical('pitch') * (2 - arcade.stability()) : 1450, now, 0.045);
+            if (arcFilterNode && active) {
+                const speed = THREE.MathUtils.clamp(weldSpeedSmooth / 3, 0, 1);
+                const basePitch = arcade.electrode() ? arcade.physical('pitch') * (2 - arcade.stability()) : 1230;
+                arcFilterNode.frequency.setTargetAtTime(basePitch + speed * 210 + heatLevel * 2.2, now, .045);
+                arcFilterNode.Q.setTargetAtTime(.85 + speed * .35, now, .07);
+            }
         }
 
         function playMenuFeedback() {
@@ -2877,6 +3155,8 @@
         function computeGrooveVolumePercent() {
             const f = weldField;
             if (!f) return 0;
+            if (assembly) return assembly.aligned ? Math.floor(100 * measureAssemblyFill(f, FIELD_NU, FIELD_NV)) : 0;
+
             const s = f.spec;
             let sumRatio = 0;
             let count = 0;
@@ -2896,8 +3176,17 @@
             return Math.min(100, Math.round((sumRatio / count) * 100));
         }
 
-        function updateHUDMetrics() {
-            const vol = computeGrooveVolumePercent();
+        function updateHUDMetrics(vol = computeGrooveVolumePercent()) {
+            if (assembly?.aligned && !assembly.joined) {
+                const status = document.getElementById('fit-pieces');
+                if (vol >= 90) {
+                    assembly.joined = true;
+                    status.textContent = 'Peças unidas ✓';
+                    showLiveFeedback('Chanfro preenchido da raiz ao topo.', 'text-emerald-300');
+                } else {
+                    status.textContent = `Preenchimento da união: ${vol}%`;
+                }
+            }
             document.getElementById('volume-pct').textContent = `${vol}%`;
             document.getElementById('volume-bar').style.width = `${vol}%`;
 
@@ -2911,7 +3200,7 @@
             // Atenua o guia holográfico conforme o chanfro é preenchido
             arcade.renderHud();
             if (guideMesh) {
-                const baseOp = Math.max(0.0, (1.0 - vol / 85) * 0.24);
+                const baseOp = Math.max(arcade.current()?.mode === "jobs" && vol < 90 ? .13 : 0, (1 - vol / 85) * .24);
                 guideMesh.material.opacity = baseOp * (arcade.reduced() ? 0.72 : 0.72 + Math.sin(guideUniformTime * 3.5) * 0.28);
             }
         }
@@ -2952,6 +3241,33 @@
             document.getElementById('current-amp').textContent = `${amperage} A`;
         }
 
+        function fitAssembly() {
+            if (!assembly || assembly.aligned) return;
+            cancelPointer();
+            const spec = STRUCTURES[currentLevel];
+            assembly.parts.forEach((mesh, index) => {
+                mesh.position.x = 0;
+                mesh.position.z = (index ? 1 : -1) * (spec.depths[index] / 2 + spec.rootHalf);
+            });
+            const backing = new THREE.Mesh(
+                new THREE.BoxGeometry(spec.length, spec.rootHeight, spec.rootHalf * 2),
+                new THREE.MeshStandardMaterial({ color: 0x586268, roughness: .83 })
+            );
+            backing.position.y = spec.rootHeight / 2;
+            assembly.parts[0].parent.add(backing);
+            workpieceGroup.updateMatrixWorld(true);
+            aimUV.valid = hasValidAim = false;
+            surfaceLayers.get(surfaceTarget)?.breakStroke();
+            surfaceTarget = null;
+            assembly.aligned = true;
+            aimTargets.unshift(aimProxy);
+            weldBeadsGroup.visible = guideGroup.visible = true;
+            const fit = document.getElementById('fit-pieces');
+            fit.textContent = 'Preenchimento da união: 0%';
+            fit.disabled = true;
+            showLiveFeedback('Raiz aberta. Faça passes em camadas até o topo.', 'text-sky-300');
+        }
+
         function rotateWorkpiece() {
             if (!STRUCTURES[currentLevel].isPipe) return;
             pipeTargetRollAngle += Math.PI / 4; // +45°
@@ -2990,13 +3306,25 @@
                 [metrics.thermal, 'Faça pausas para resfriar a peça.'],
                 [metrics.stability, 'Mantenha a distância do arco na faixa estável.']
             ].sort((a, b) => a[0] - b[0])[0][1];
-            const summary = session.mode === 'arcade' ? `${record} pontos Arcade` : zen ? 'Você pode voltar à mesma peça.'
+            const summary = session.job.seconds ? `${record} pontos Arcade` : zen ? 'Você pode voltar à mesma peça.'
+                : session.mode === 'jobs' && !passed ? (assembly ? 'Preencha a raiz até o topo em todos os trechos.' : 'Gire o suporte e complete as áreas sem passe.')
                 : anotherStage ? 'Primeira etapa aprovada.' : passed ? 'Ordem aprovada.' : `Meta ${session.job.minimum}/100. ${objective && objective.achieved < objective.required ? `${objective.label}: ${objective.achieved}${objective.suffix} de ${objective.required}${objective.suffix}. ` : ''}${feedback}`;
             set('insp-comment', summary);
-            document.getElementById('result-reward').textContent = report.reward || '';
+            document.getElementById('result-reward').textContent = assembly
+                ? (assembly.joined ? 'União concluída.' : assembly.aligned ? 'Peças encaixadas. Falta completar o cordão.' : 'Peças ainda separadas.')
+                : report.reward || '';
             set('result-details', `Cobertura ${metrics.coverage}% · Avanço ${metrics.pace}% · Regularidade ${metrics.regularity}% · Arco ${metrics.stability}% · Trocas ${metrics.replacements}`);
+            const card = arcade.card();
+            const preview = document.getElementById('delivery-preview');
+            preview.replaceChildren();
+            if (card) {
+                card.setAttribute('role', 'img');
+                card.setAttribute('aria-label', `Antes e depois de ${session.job.name}`);
+                preview.append(card);
+            }
+            document.getElementById('download-result').classList.toggle('hidden', !card);
             const next = document.getElementById('result-next');
-            next.textContent = anotherStage ? 'Segunda peça →' : session.mode === 'career' && passed && session.index < 9 ? 'Próxima missão →' : zen ? 'Continuar peça' : 'Voltar ao menu';
+            next.textContent = anotherStage ? 'Segunda peça →' : session.mode === 'career' && passed && session.index < 9 ? 'Próxima missão →' : session.mode === 'jobs' ? (passed ? 'Continuar serviços →' : 'Voltar à peça') : zen ? 'Continuar peça' : 'Voltar ao menu';
             const modal = document.getElementById('inspect-modal');
             modal.classList.toggle('result-pass', !zen && passed && Boolean(medal));
             modal.classList.remove('hidden');
@@ -3015,18 +3343,32 @@
         // LOOP PRINCIPAL DE ANIMAÇÃO (60 FPS)
         // =========================================================================
         let hudRefreshAccum = 0;
+        let volumeRefreshAccum = 0;
+        let displayedVolume = 0;
 
         function animate(timestamp) {
             requestAnimationFrame(animate);
-            if (document.hidden || contextLost) return;
+            if (document.hidden || contextLost) {
+                reticle.hidden = true;
+                simulationClock.reset();
+                WeldingPerformance.clearInput();
+                return;
+            }
 
             const now = timestamp || performance.now();
             const clockDt = Math.max(0, (now - lastFrameTime) / 1000);
             const dt = Math.min(0.05, Math.max(0.001, clockDt));
             lastFrameTime = now;
             if (arcade.menu()) {
+                reticle.hidden = true;
+                simulationClock.reset();
+                WeldingPerformance.clearInput();
                 arcade.drawWorkshop(dt);
                 return;
+            }
+            if (clockDt > 0 && clockDt < 2) {
+                WeldingPerformance.sample('frame', clockDt * 1000);
+                arcade.adaptResolution(clockDt * 1000);
             }
             guideUniformTime += dt;
 
@@ -3043,20 +3385,28 @@
             // 2. Câmera interativa + filtragem suave da tocha
             arcade.step(dt, clockDt);
             updateCameraTransform(dt);
-            torchGroup.visible = !arcade.menu() && !arcade.electrode() && hasValidAim;
-            electrodeGroup.visible = !arcade.menu() && Boolean(arcade.electrode()) && hasValidAim;
+            torchGroup.visible = !arcade.menu() && !arcade.electrode() && aimUV.valid;
+            electrodeGroup.visible = !arcade.menu() && Boolean(arcade.electrode()) && aimUV.valid;
 
             if (hasValidAim) {
-                filteredAimPos.lerp(aimWorldPos, Math.min(1, dt * 26));
+                filteredAimPos.lerp(aimWorldPos, WeldingPerformance.visualBlend(arcade.smoothing(), dt));
                 updateTorchPose(filteredAimPos, aimNormal);
             }
 
             // 3. Física contínua da poça de fusão, brilho do arco e filtro de máscara
-            if (!arcade.controlsOpen()) stepWeldPhysics(dt);
+            if (!arcade.controlsOpen()) runSimulation(clockDt, spec);
+            else simulationClock.reset();
+            if (isWelding && aimUV.valid) {
+                effectsTime += dt;
+                if (effectsTime >= 1 / arcade.graphicsProfile().effectsHz) {
+                    effectsTime = 0;
+                    emitArcSplats(aimWorldPos, aimNormal);
+                }
+            } else effectsTime = 0;
 
             const maskEl = document.getElementById('mask-overlay');
             if (isWelding && aimUV.valid) {
-                arcLight.position.copy(filteredAimPos).addScaledVector(aimNormal, 0.25);
+                arcLight.position.copy(aimWorldPos).addScaledVector(aimNormal, 0.25);
                 arcLight.intensity = arcade.reduced() ? 0.55 : (2.6 + Math.random() * 1.4) * arcade.stability();
                 if (moltenPuddleMesh) {
                     moltenPuddleMesh.material.opacity = 0.55;
@@ -3117,12 +3467,23 @@
             updateGaussianSplats(dt);
 
             hudRefreshAccum += dt;
-            if (hudRefreshAccum >= 0.08) {
+            volumeRefreshAccum += dt;
+            if (hudRefreshAccum >= 0.1) {
                 hudRefreshAccum = 0;
-                updateHUDMetrics();
+                const mark = WeldingPerformance.now();
+                if (volumeRefreshAccum >= .25) {
+                    volumeRefreshAccum = 0;
+                    displayedVolume = computeGrooveVolumePercent();
+                }
+                updateSpeedIndicator(weldSpeedSmooth, isWelding && aimUV.valid);
+                if (isWelding && aimUV.valid) setArcSoundActive(true);
+                updateHUDMetrics(displayedVolume);
+                WeldingPerformance.timed('hud', mark);
             }
 
             renderer.render(scene, camera);
+            updateWeldReticle();
+            WeldingPerformance.rendered(renderer, scene);
         }
 
         const actions = {
@@ -3131,9 +3492,11 @@
             setCameraPreset,
             resetCameraView,
             rotateWorkpiece,
+            fitAssembly,
             chipAllSlag,
             resetLevel,
             inspectWeld,
+            downloadResult: () => arcade.downloadCard(),
             toggleSound,
             closeTutorial,
             prevTutorialStep,

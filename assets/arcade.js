@@ -8,7 +8,7 @@ const arcade = (() => {
     };
     const data = WeldingCampaign;
     const profile = data.loadSave(storage, window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-    const modes = { career: 'Carreira', arcade: 'Arcade', zen: 'Zen', pro: 'Profissional' };
+    const modes = { jobs: 'Serviço', bench: 'Desafio', career: 'Carreira', arcade: 'Arcade', zen: 'Zen', pro: 'Profissional' };
     const finishes = {
         sand: { name: 'Oficina original', cost: 0, level: 1, color: 0x0b0f17 },
         copper: { name: 'Luz de cobre', cost: 75, level: 1, color: 0x2a1812 },
@@ -19,6 +19,14 @@ const arcade = (() => {
         { name: 'Filete contra o relógio', piece: 1, process: 'E6013', amp: 125, seconds: 55, brief: 'Mantenha o arco estável entre as trocas de vareta.' },
         { name: 'Curva rápida', piece: 2, process: 'E6010', amp: 128, seconds: 60, brief: 'Combine centralização e avanço na curva.' }
     ];
+    const jobs = [
+        { name: 'Cantoneira quebrada', piece: 4, process: 'torch', amp: 115, brief: 'Encaixe as metades do suporte e preencha a raiz até o topo.', assembly: true },
+        { name: 'Moldura empenada', piece: 6, secondPiece: 5, process: 'torch', amp: 120, brief: 'Escolha a ordem dos reparos. Complete as juntas da moldura em duas etapas.', assembly: true },
+        { name: 'Suporte tubular', piece: 3, process: 'torch', amp: 115, brief: 'Gire a peça para alcançar a solda em toda a circunferência.', objective: 'coverage', target: 78 }
+    ];
+    const bench = { name: 'Passe de bancada', piece: 0, process: 'torch', amp: 115, seconds: 50, brief: 'Cubra o chanfro em 50 segundos. O desafio usa sempre a mesma peça e corrente inicial.' };
+    let jobBefore = null;
+    let resultCard = null;
     const contracts = [
         { name: 'Filete lateral', piece: 1, process: 'E7018', amp: 125, minimum: 72, camera: 4, brief: 'Execute o filete com arco manual e controle térmico.' },
         { name: 'Reparo de tubulação', piece: 3, process: 'E6010', amp: 125, minimum: 76, camera: 2, brief: 'Gire o tubo entre os passes e mantenha o arco curto.' },
@@ -34,6 +42,7 @@ const arcade = (() => {
     const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)');
     let workshop;
     let panelOpen = false;
+    let dynamicResolution = WeldingPerformance.resolutionState();
     let pageKey = 'home';
     let lastStatus = '';
 
@@ -50,6 +59,20 @@ const arcade = (() => {
     };
     const physical = key => electrode()?.[key] ?? (key === 'sparks' || key === 'pitch' ? 0 : 1);
 
+    const graphicsProfile = () => WeldingPerformance.profiles[profile.settings.graphics] || WeldingPerformance.profiles.standard;
+    const controlProfile = () => WeldingPerformance.controls[profile.settings.control] || WeldingPerformance.controls.precision;
+    const smoothing = () => profile.settings.smoothing ?? controlProfile().smoothing;
+    function applyResolution() {
+        const quality = graphicsProfile();
+        const cap = Math.min(window.devicePixelRatio || 1, quality.cap);
+        const scale = profile.settings.adaptive ? dynamicResolution.scale() : 1;
+        const ratio = Math.max(quality.floor, cap * scale);
+        if (Math.abs(renderer.getPixelRatio() - ratio) >= .02) renderer.setPixelRatio(ratio);
+    }
+    function adaptResolution(ms) {
+        if (profile.settings.adaptive && dynamicResolution.sample(ms)) applyResolution();
+    }
+
     function applySettings() {
         soundEnabled = profile.settings.sound;
         $('sound-btn').textContent = soundEnabled ? '🔊' : '🔇';
@@ -57,8 +80,8 @@ const arcade = (() => {
         document.body.classList.toggle('reduced-motion', reduced());
         document.body.classList.toggle('minimal-hud', profile.settings.minimal);
         if (!renderer) return;
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, profile.settings.graphics === 'low' ? 1 : 1.75));
-        renderer.shadowMap.enabled = profile.settings.graphics !== 'low';
+        applyResolution();
+        renderer.shadowMap.enabled = graphicsProfile().shadows;
         workshop?.move(0, 0);
         scene.background.setHex(finishes[profile.finish]?.color ?? finishes.sand.color);
         scene.fog.color.copy(scene.background);
@@ -156,11 +179,20 @@ const arcade = (() => {
         $('menu-page').classList.add('page-enter');
         $('mode-menu').hidden = true;
         $('menu-page').hidden = false;
-        const titles = { ...modes, modes: 'Modos de jogo', workshop: 'Oficina e equipamentos', stats: 'Estatísticas e conquistas', settings: 'Configurações' };
+        const titles = { ...modes, jobs: 'Ordens de serviço', modes: 'Modos de jogo', workshop: 'Oficina e equipamentos', stats: 'Estatísticas e conquistas', settings: 'Configurações' };
         $('menu-title').textContent = titles[key];
         const parent = $('menu-content');
         parent.replaceChildren();
-        if (key === 'career') {
+        if (key === 'jobs') {
+            const rows = group(parent, 'arc-options');
+            jobs.forEach((job, index) => {
+                const saved = profile.completedJobs[index];
+                button(rows, job.name, () => start('jobs', index),
+                    saved ? `Melhor entrega: ${saved.grade}/100` : job.brief);
+            });
+            paragraph(parent, 'Na moldura, você escolhe qual reparo fazer primeiro.');
+            button(parent, 'Moldura: começar pela chapa de reforço', () => start('jobs', 1, 'torch', 0, null, true)).className = 'game-link';
+        } else if (key === 'career') {
             const max = data.unlocked(profile);
             selected = max;
             const layout = group(parent, 'career-layout');
@@ -218,6 +250,8 @@ const arcade = (() => {
             if (initial.bottom > list.bottom) options.scrollTop = initial.top - list.top - 32;
         } else if (key === 'modes') {
             const options = group(parent, 'arc-options');
+            button(options, 'Desafio de bancada', () => start('bench', 0),
+                `50 segundos · Recorde local ${profile.benchBest[0] || 0}`);
             const summaries = { arcade: 'Desafios contra o relógio', zen: 'Bancada livre', pro: 'Ordens com controle manual' };
             for (const [mode, summary] of Object.entries(summaries)) {
                 const option = button(options, modes[mode], () => showPage(mode), summary);
@@ -262,6 +296,17 @@ const arcade = (() => {
         } else if (key === 'workshop') {
             paragraph(parent, `Nível ${level()} · ${profile.credits} créditos · ${profile.xp} XP`);
             paragraph(parent, 'Equipamentos disponíveis na solda livre: tocha, porta-eletrodo e varetas E6013, E7018 e E6010.');
+            const gallery = group(parent, 'job-gallery');
+            control('h3', 'Peças em exposição', gallery);
+            for (const [index, entry] of Object.entries(profile.completedJobs)) {
+                if (!jobs[index] || !entry.image) continue;
+                const section = control('figure', '', gallery);
+                const img = control('img', '', section);
+                img.src = entry.image;
+                img.alt = `Antes e depois de ${jobs[index].name}`;
+                control('figcaption', `${jobs[index].name} · ${entry.grade}/100`, section);
+            }
+            if (!gallery.querySelector('figure')) paragraph(gallery, 'Entregue um serviço para colocar a peça em exposição.');
             const options = group(parent, 'arc-options');
             for (const [key, finish] of Object.entries(finishes)) {
                 const owned = profile.owned.includes(key);
@@ -288,11 +333,12 @@ const arcade = (() => {
             const fields = group(parent, 'arc-fields');
             const setting = (label, key, choices, boolean = false) => field(fields, label, choices, String(profile.settings[key]), value => {
                 profile.settings[key] = boolean ? value === 'true' : value;
+                if (key === 'graphics' || key === 'adaptive') dynamicResolution = WeldingPerformance.resolutionState();
                 applySettings();
                 persist();
             });
             setting('Áudio', 'sound', [['true', 'Ligado'], ['false', 'Desligado']], true);
-            setting('Gráficos', 'graphics', [['standard', 'Padrão'], ['low', 'Leve']], false);
+            setting('Gráficos', 'graphics', [['low', 'Leve'], ['standard', 'Equilibrado'], ['high', 'Alto']]);
             setting('Movimento e flashes reduzidos', 'reduced', [['false', 'Desligados'], ['true', 'Ligados']], true);
             setting('Interface da bancada', 'minimal', [['false', 'Padrão'], ['true', 'Mínima']], true);
             setting('Abertura assistida no mouse e no toque', 'assisted', [['true', 'Ligada'], ['false', 'Manual']], true);
@@ -321,20 +367,56 @@ const arcade = (() => {
                 syncSensitivity();
                 persist();
             });
+            field(fields, 'Resposta da tocha', [['precision', 'Precisão'], ['realistic', 'Realista'], ['assisted', 'Assistido']], profile.settings.control, value => {
+                profile.settings.control = value;
+                profile.settings.smoothing = null;
+                smoothingSlider.value = smoothing();
+                syncSmoothing();
+                persist();
+            });
+            const smoothingField = group(fields, 'sensitivity-field');
+            const smoothingLabel = control('label', 'Suavização visual da tocha', smoothingField);
+            smoothingLabel.htmlFor = 'torch-smoothing';
+            const smoothingValue = control('output', '', smoothingLabel);
+            const smoothingSlider = control('input', '', smoothingField);
+            smoothingSlider.id = 'torch-smoothing';
+            smoothingSlider.type = 'range';
+            smoothingSlider.min = '0';
+            smoothingSlider.max = '100';
+            smoothingSlider.value = smoothing();
+            function syncSmoothing() { smoothingValue.textContent = smoothingSlider.value + '%'; }
+            syncSmoothing();
+            smoothingSlider.addEventListener('input', () => {
+                profile.settings.smoothing = Number(smoothingSlider.value);
+                syncSmoothing();
+                persist();
+            });
+            control('small', 'Suaviza a animação da ferramenta. O ponto de deposição segue a mira lógica.', smoothingField);
+            setting('Resolução dinâmica', 'adaptive', [['true', 'Ligada'], ['false', 'Desligada']], true);
+            field(fields, 'Diagnóstico de desempenho', [['false', 'Desligado'], ['true', 'Ligado nesta sessão']], String(WeldingPerformance.enabled()), value => {
+                WeldingPerformance.enable(value === 'true');
+                report.hidden = value !== 'true';
+                WeldingPerformance.updateReadout();
+            });
+            const report = control('pre', '', parent);
+            report.id = 'performance-readout';
+            report.hidden = !WeldingPerformance.enabled();
+            WeldingPerformance.updateReadout();
             paragraph(parent, 'Ajuste a distância pelo controle na tela ou com Q e E. No modo Profissional, o arco é manual.');
         }
         $('menu-title').focus({ preventScroll: true });
     }
 
-    function start(mode, index, process = 'torch', stage = 0, previous = null) {
+    function start(mode, index, process = 'torch', stage = 0, previous = null, reverse = false) {
         const job = mode === 'career' ? data.missions[index] : mode === 'arcade' ? challenges[index]
-            : mode === 'pro' ? contracts[index] : { name: 'Solda livre', piece: index, process, brief: 'Solde no seu ritmo.' };
+            : mode === 'pro' ? contracts[index] : mode === 'jobs' ? jobs[index] : mode === 'bench' ? bench : { name: 'Solda livre', piece: index, process, brief: 'Solde no seu ritmo.' };
         if (!job || (mode === 'career' && index > data.unlocked(profile))) return;
-        active = { mode, index, job, stage, previous, remaining: job.seconds ?? 0, running: false };
-        profile.last = { mode, index, process, stage, previous };
+        active = { mode, index, job, stage, previous, reverse, remaining: job.seconds ?? 0, running: false };
+        profile.last = { mode, index, process, stage, previous, reverse };
         persist();
-        loadStructure(stage ? job.secondPiece : job.piece);
+        loadStructure(Boolean(stage) !== reverse ? job.secondPiece : job.piece);
         setCameraPreset(job.camera || 1);
+        if (mode === 'jobs' || mode === 'bench') jobBefore = captureBenchPhoto();
         $('inspect-modal').classList.add('hidden');
         showMenu(false);
         renderHud();
@@ -345,8 +427,10 @@ const arcade = (() => {
     }
     function onLoadPiece() {
         result = null;
+        resultCard = null;
         trace = data.newTrace();
         rod = freshRod();
+        $('amp-slider').disabled = active?.mode === 'bench';
         if (active) {
             active.remaining = active.job.seconds ?? 0;
             active.running = false;
@@ -361,7 +445,7 @@ const arcade = (() => {
         const last = profile.last;
         if (!last) return;
         if (active && !result) showMenu(false);
-        else start(last.mode, last.index, last.process, last.stage, last.previous);
+        else start(last.mode, last.index, last.process, last.stage, last.previous, last.reverse || false);
     }
     function renderHud() {
         if (!active) return;
@@ -369,7 +453,7 @@ const arcade = (() => {
         const target = active.job.objective;
         $('order-text').textContent = active.job.brief + (target ? ` ${data.labels[target]} ≥ ${active.job.target}${target === 'replacements' ? '' : '%'}.` : '');
         $('current-amp').textContent = `${amperage} A`;
-        $('order-clock').textContent = active.mode === 'arcade' ? `${Math.ceil(active.remaining)} s` :
+        $('order-clock').textContent = active.job.seconds ? `${Math.ceil(active.remaining)} s` :
             active.job.minimum ? `Meta ${active.job.minimum}` : '';
         $('rod-controls').hidden = !electrode();
         $('free-piece').hidden = !isZen();
@@ -426,7 +510,7 @@ const arcade = (() => {
     }
     function step(dt, clockDt) {
         if (!allowed()) return;
-        if (active.mode === 'arcade' && active.running) {
+        if (active.job.seconds && active.running) {
             active.remaining = Math.max(0, active.remaining - clockDt);
             if (!active.remaining) {
                 inspectWeld();
@@ -487,20 +571,28 @@ const arcade = (() => {
         const { job, mode, stage, previous } = active;
         const twoStages = job.secondPiece !== undefined;
         const finalGrade = previous === null ? metrics.grade : Math.min(previous.grade, metrics.grade);
-        const passed = data.passes(job, metrics, finalGrade);
+        const passed = data.passes(job, metrics, finalGrade) && (!job.assembly || volume >= 90);
         const star = passed && job.objective && metrics[job.objective] >= data.thresholds[job.objective];
         const anotherStage = twoStages && stage === 0 && passed;
         const objective = job.objective && {
             label: data.labels[job.objective], required: job.target, achieved: metrics[job.objective],
             suffix: job.objective === 'replacements' ? '' : '%'
         };
-        const record = mode === 'arcade' ? Math.max(0, Math.round(score + metrics.coverage * 12 + metrics.pace * 4)) : 0;
+        const record = job.seconds ? Math.max(0, Math.round(score + metrics.coverage * 12 + metrics.pace * 4)) : 0;
         const earned = mode === 'career' && passed && !anotherStage && !profile.records[active.index]?.passed;
         const reward = earned ? `+${job.xp} XP · +${job.credits} créditos` : '';
         profile.finishes++;
-        if (anotherStage) profile.last = { mode, index: active.index, process: job.process, stage: 1, previous: metrics };
+        if (anotherStage) profile.last = { mode, index: active.index, process: job.process, stage: 1, previous: metrics, reverse: active.reverse };
         if (mode === 'career' && !anotherStage) data.recordMission(profile, active.index, finalGrade, passed, star);
         if (mode === 'arcade') profile.arcade[active.index] = Math.max(profile.arcade[active.index] ?? 0, record);
+        if (mode === 'bench') profile.benchBest[0] = Math.max(profile.benchBest[0] || 0, record);
+        if (mode === 'jobs' || mode === 'bench') {
+            resultCard = createDeliveryCard(job.name, mode === 'bench' ? `${record} pontos` : `${finalGrade}/100`, jobBefore, captureBenchPhoto());
+            const prior = profile.completedJobs[active.index];
+            if (mode === 'jobs' && passed && !anotherStage && (!prior || finalGrade >= prior.grade)) {
+                profile.completedJobs[active.index] = { grade: finalGrade, image: resultCard.toDataURL('image/jpeg', .78) };
+            }
+        }
         if (mode === 'pro') profile.pro[active.index] = Math.max(profile.pro[active.index] ?? 0, metrics.grade);
         persist();
         result = { metrics, finalGrade, passed, anotherStage, star, record, objective, reward, medal: data.medal(finalGrade) };
@@ -508,14 +600,15 @@ const arcade = (() => {
     }
     function retry() {
         if (!active) return;
-        start(active.mode, active.index, active.job.process, active.stage, active.previous);
+        start(active.mode, active.index, active.job.process, active.stage, active.previous, active.reverse);
     }
     function advance() {
-        if (isZen() && result) {
+        if ((isZen() || (active?.mode === 'jobs' && result && !result.passed)) && result) {
             result = null;
             paused = false;
             $('inspect-modal').classList.add('hidden');
-        } else if (result?.anotherStage) start('career', active.index, active.job.process, 1, result.metrics);
+        } else if (result?.anotherStage) start(active.mode, active.index, active.job.process, 1, result.metrics, active.reverse);
+        else if (active?.mode === 'jobs' && result?.passed && active.index + 1 < jobs.length) start('jobs', active.index + 1);
         else if (active?.mode === 'career' && result?.passed && active.index + 1 < data.missions.length) start('career', active.index + 1);
         else showMenu();
     }
@@ -529,7 +622,10 @@ const arcade = (() => {
         applySettings();
         document.querySelectorAll('#mode-menu [data-page]').forEach(node => {
             const key = node.dataset.page;
-            node.addEventListener('click', () => showPage(key));
+            node.addEventListener('click', () => {
+                if (node.id === 'first-service') start('jobs', 0);
+                else showPage(key);
+            });
             const focusScene = () => { if (pageKey === 'home') workshop.select(key, 0); };
             const restoreScene = () => { if (pageKey === 'home') workshop.select('home', 0); };
             node.addEventListener('pointerenter', focusScene);
@@ -581,7 +677,13 @@ const arcade = (() => {
     const stability = () => electrode() ? rod.quality : 1;
     const light = () => profile.settings.graphics === 'low';
     return {
-        ready, drawWorkshop, sensitivity, controlsOpen: () => panelOpen, onLoadPiece, chooseNextFreePiece, allowed, begin, stop, step, sample, renderHud, physical, electrode,
+        ready, drawWorkshop, card: () => resultCard, downloadCard() {
+            if (!resultCard) return;
+            const link = document.createElement('a');
+            link.href = resultCard.toDataURL('image/png');
+            link.download = 'welding-master-resultado.png';
+            link.click();
+        }, sensitivity, controlProfile, smoothing, graphicsProfile, adaptResolution, controlsOpen: () => panelOpen, onLoadPiece, chooseNextFreePiece, allowed, begin, stop, step, sample, renderHud, physical, electrode,
         distance, rodLength, reduced, stability, light, finish, retry, advance, current, menu, isZen, soundChanged
     };
 })();

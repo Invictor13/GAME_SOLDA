@@ -93,7 +93,7 @@ function createWorkshopView() {
     box(table, rubber, .92, .13, .15, 2.55, 2.25, 1.1).rotation.y = -.48;
     box(table, copper, .25, .15, .17, 2.18, 2.25, .91).rotation.y = -.48;
 
-    const samples = Array.from({ length: 4 }, () => {
+    const samples = Array.from({ length: 4 + workshopAssemblies.length }, () => {
         const sample = new THREE.Group();
         sample.position.set(0, 2.15, -.20);
         table.add(sample);
@@ -118,6 +118,18 @@ function createWorkshopView() {
         tube.castShadow = tube.receiveShadow = true;
         samples[3].add(tube);
     }
+    workshopAssemblies.forEach((part, index) => {
+        const sample = samples[index + 4];
+        const scale = 2.35 / part.length;
+        part.depths.forEach((depth, side) => {
+            const sign = side ? 1 : -1;
+            const mesh = new THREE.Mesh(makeAssemblyPartGeometry(part, side), side ? edge : steel);
+            mesh.scale.setScalar(scale);
+            mesh.position.set(sign * .1, part.height * scale / 2, sign * (depth * scale / 2 + .14));
+            mesh.castShadow = mesh.receiveShadow = true;
+            sample.add(mesh);
+        });
+    });
     const dustGeometry = new THREE.BufferGeometry();
     const dustPositions = [];
     for (let i = 0; i < 42; i++) {

@@ -34,9 +34,9 @@ const WeldingCampaign = (() => {
     const saveKey = 'welding-master-arcade-v1';
     const loadSave = (storage, prefersReducedMotion = false) => {
         const base = {
-            records: {}, arcade: {}, pro: {}, xp: 0, credits: 0, finishes: 0,
+            records: {}, arcade: {}, pro: {}, completedJobs: {}, benchBest: {}, xp: 0, credits: 0, finishes: 0,
             owned: ['sand'], finish: 'sand', last: null,
-            settings: { sound: true, graphics: 'standard', reduced: prefersReducedMotion, assisted: true, minimal: false, sensitivity: 100 }
+            settings: { sound: true, graphics: 'standard', reduced: prefersReducedMotion, assisted: true, minimal: false, sensitivity: 100, control: 'precision', smoothing: null, adaptive: true }
         };
         try {
             const saved = JSON.parse(storage.getItem(saveKey));

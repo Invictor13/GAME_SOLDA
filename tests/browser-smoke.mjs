@@ -78,12 +78,265 @@ try {
     }
     await send('Runtime.enable');
     await send('Page.enable');
+    if (process.argv.includes('--multipass')) {
+        await send('Page.navigate', { url: new URL('../index.html', import.meta.url).href });
+        await until('Boolean(document.querySelector("#canvas-container canvas")) && document.readyState === "complete"', 'Multipass startup');
+        await click('#first-service');
+        await click('#fit-pieces');
+        const result = await evaluate(`(() => {
+            const f = weldField;
+            const spec = STRUCTURES[currentLevel];
+            const point = new THREE.Vector3();
+            const dt = 1 / 60;
+            const total = () => f.solidH.reduce((sum, value, index) => sum + value + f.liquidH[index], 0);
+            const thickness = () => {
+                const g = uvToGridIndices(0, 0);
+                return f.solidH[g.iu * FIELD_NV + g.iv];
+            };
+            const pass = (from, to) => {
+                aimUV.valid = true;
+                surfaceTarget = null;
+                arcade.begin();
+                for (let i = 0; i < 240; i++) {
+                    const u = from + (to - from) * i / 239;
+                    spec.evalPos(u, 0, spec.rootHeight, point);
+                    stepWeldPhysics(dt, u, 0, point);
+                }
+                arcade.stop();
+                const beforeCooling = total();
+                for (let i = 0; i < 330; i++) stepWeldPhysics(dt, 0, 0, point);
+                return { mass: total(), thickness: thickness(), drift: Math.abs(beforeCooling - total()) };
+            };
+            const first = pass(-1.2, 1.2);
+            const second = pass(1.2, -1.2);
+            let thinnest = Infinity;
+            for (let u = -.9; u < .9; u += .04) {
+                const g = uvToGridIndices(u, 0);
+                thinnest = Math.min(thinnest, f.solidH[g.iu * FIELD_NV + g.iv]);
+            }
+            return { first, second, thinnest };
+        })()`);
+        assert.ok(result.first.mass > 0 && result.second.mass > result.first.mass, JSON.stringify(result));
+        assert.ok(result.second.thickness > result.first.thickness && result.thinnest > 0, JSON.stringify(result));
+        assert.ok(result.first.drift < .001 && result.second.drift < .001, JSON.stringify(result));
+        assert.deepEqual(uncaught, []);
+        info('Dois passes sobrepostos: mais metal e altura no segundo, sem lacuna no centro nem perda no resfriamento.');
+    } else if (process.argv.includes('--jobs')) {
+        await send('Page.navigate', { url: new URL('../index.html', import.meta.url).href });
+        await until('Boolean(document.querySelector("#canvas-container canvas")) && document.readyState === "complete"', 'Jobs startup');
+        await click('#first-service');
+        assert.equal(await evaluate('arcade.current().job.name'), 'Cantoneira quebrada');
+        await click('[data-action=inspectWeld]');
+        assert.match(await evaluate('document.querySelector("#insp-comment").textContent'), /Preencha/);
+        await click('#result-next');
+        assert.equal(await evaluate('arcade.allowed() && !assembly.aligned'), true);
+        await click('#fit-pieces');
+        await evaluate(`for (let i = 0; i < weldField.solidH.length; i++) {
+            weldField.solidH[i] = Math.max(0, weldField.spec.height - weldField.baseH[i]);
+        }`);
+        await click('[data-action=inspectWeld]');
+        assert.equal(await evaluate('Boolean(arcade.card())'), true);
+        assert.match(await evaluate('JSON.parse(localStorage.getItem("welding-master-arcade-v1")).completedJobs[0].image'), /^data:image\/jpeg/);
+        await click('#result-next');
+        assert.equal(await evaluate('arcade.current().job.name'), 'Moldura empenada');
+        await click('#leave-game');
+        await click('[data-page=workshop]');
+        assert.equal(await evaluate('document.querySelectorAll(".job-gallery figure").length'), 1);
+        await click('#menu-back');
+        await click('.home-links [data-page=jobs]');
+        await evaluate(`[...document.querySelectorAll('#menu-content button')].find(button => button.textContent.includes('começar pela chapa')).click()`);
+        assert.equal(await evaluate('currentLevel === 5 && arcade.current().reverse'), true);
+        await click('#leave-game');
+        await click('[data-page=modes]');
+        await evaluate(`[...document.querySelectorAll('#menu-content button')].find(button => button.textContent.includes('Desafio de bancada')).click()`);
+        assert.equal(await evaluate('arcade.current().remaining === 50 && document.querySelector("#amp-slider").disabled'), true);
+        await click('[data-action=inspectWeld]');
+        assert.equal(await evaluate('JSON.parse(localStorage.getItem("welding-master-arcade-v1")).benchBest[0]'), 0);
+        assert.deepEqual(uncaught, []);
+        info('Serviço incompleto retomável, entrega e exposição, ordem da moldura e desafio local verificados.');
+    } else if (process.argv.includes('--surface')) {
+        await send('Page.navigate', { url: new URL('../index.html', import.meta.url).href });
+        await until('Boolean(document.querySelector("#canvas-container canvas")) && document.readyState === "complete"', 'Surface test startup');
+        await click('[data-page=modes]');
+        await click('[data-page=zen]');
+        await evaluate(`(() => {
+            const select = document.querySelector('#menu-content select');
+            if (select.options.length !== 7) throw Error('Expected seven pieces');
+            select.value = '5';
+            select.dispatchEvent(new Event('change'));
+        })()`);
+        await click('.arc-primary');
+        const result = await evaluate(`(() => {
+            const spec = STRUCTURES[currentLevel];
+            camera.position.set(7.2, 5.2, 6.5);
+            camera.lookAt(0, .4, 0);
+            camera.updateMatrixWorld(true);
+            function aim(point) {
+                point.project(camera);
+                updateAimFromPointer((point.x + 1) * innerWidth / 2, (1 - point.y) * innerHeight / 2);
+            }
+            const right = assembly.parts[1];
+            aim(new THREE.Vector3().copy(right.position).add(new THREE.Vector3(0, spec.height / 2, 0)));
+            if (!aimUV.valid || surfaceTarget !== right) throw Error('Free plate top did not accept aim');
+            updateWeldReticle();
+            const reticleBounds = document.getElementById('weld-reticle').getBoundingClientRect();
+            const aimNdc = aimWorldPos.clone().project(camera);
+            if (reticleBounds.width < 10 || Math.abs(reticleBounds.left + reticleBounds.width / 2 - (1 + aimNdc.x) * innerWidth / 2) > 1) {
+                throw Error('Reticle is missing or detached from the logical aim');
+            }
+            for (const tool of [torchGroup, electrodeGroup]) tool.traverse(part => {
+                if (part.isMesh && (!part.material.transparent || part.material.opacity >= .6 || part.castShadow)) {
+                    throw Error('Tool still obscures the weld');
+                }
+            });
+
+            arcade.begin();
+            runSimulation(1 / 30, spec);
+            if (!surfaceLayers.has(right)) throw Error('Free plate did not receive a bead');
+            if (weldField.liquidH.some(value => value > 0)) throw Error('Free pass deposited on the hidden seam');
+            arcade.stop();
+            aim(new THREE.Vector3().copy(right.position).add(new THREE.Vector3(spec.length / 2, 0, 0)));
+            if (!aimUV.valid || surfaceTarget !== right || Math.abs(aimNormal.x) < .9) throw Error('End face did not accept aim');
+            arcade.begin();
+            runSimulation(1 / 60, spec);
+            arcade.stop();
+            document.querySelector('#fit-pieces').click();
+            if (!assembly.aligned || !surfaceLayers.has(right)) throw Error('Alignment failed or lost the existing bead');
+            camera.position.set(0, 8, .1);
+            camera.lookAt(0, 0, 0);
+            camera.updateMatrixWorld(true);
+            aim(new THREE.Vector3(0, spec.rootHeight, 0));
+            if (!aimUV.valid || surfaceTarget || Math.abs(aimWorldPos.y - spec.rootHeight) > .07) {
+                throw Error('The aligned joint did not aim at its root');
+            }
+            for (let i = 1; i < 32; i++) {
+                const u = spec.uMin + (spec.uMax - spec.uMin) * i / 32;
+                aim(new THREE.Vector3(u, spec.rootHeight, 0));
+                if (!aimUV.valid || surfaceTarget) throw Error('Aligned seam did not accept aim');
+                if (i === 1) arcade.begin();
+                runSimulation(1 / 60, spec);
+            }
+            arcade.stop();
+            updateHUDMetrics();
+            if (assembly.joined) throw Error('A quick superficial pass incorrectly completed the joint');
+            // Exercise completion with a fully deposited groove, independently of input speed.
+            for (let i = 0; i < weldField.solidH.length; i++) {
+                weldField.solidH[i] = spec.height - weldField.baseH[i];
+            }
+            updateHUDMetrics();
+            return { joined: assembly.joined, label: document.querySelector('#fit-pieces').textContent };
+        })()`);
+        assert.equal(result.joined, true, JSON.stringify(result));
+        assert.match(result.label, /unidas/);
+        assert.deepEqual(uncaught, []);
+        info('Solda livre preservada, mira na raiz confirmada e conclusão condicionada ao preenchimento.');
+    } else if (process.argv.includes('--benchmark')) {
+        await send('Emulation.setDeviceMetricsOverride', { width: 480, height: 320, deviceScaleFactor: 1, mobile: false });
+        const current = new URL('../index.html', import.meta.url).href;
+        const baseline = process.env.WELDING_BASELINE_URL;
+        for (const [label, url] of (baseline ? [['baseline', baseline], ['optimized', current]] : [['optimized', current]])) {
+            await send('Page.navigate', { url });
+            await until('Boolean(document.querySelector("#canvas-container canvas")) && document.readyState === "complete"', 'Benchmark startup');
+            await click('[data-page=settings]');
+            await evaluate(`(() => {
+                const quality = document.querySelectorAll('#menu-content select')[1];
+                quality.value = 'low';
+                quality.dispatchEvent(new Event('change'));
+                const reduced = document.querySelectorAll('#menu-content select')[2];
+                reduced.value = 'true';
+                reduced.dispatchEvent(new Event('change'));
+                const adaptive = [...document.querySelectorAll('#menu-content select')].find(select => select.parentElement.textContent.startsWith('Resolução dinâmica'));
+                if (adaptive) {
+                    adaptive.value = 'false';
+                    adaptive.dispatchEvent(new Event('change'));
+                }
+            })()`);
+            await click('#menu-back');
+            await click('[data-page=career]');
+            await click('.arc-primary');
+            await delay(500);
+            const result = await evaluate(`new Promise(resolve => {
+                const rows = { frame: [], logic: [], ray: [], mesh: [], hud: [], input: [], lag: [] };
+                let previous = performance.now();
+                let frame = 0;
+                let input = null;
+                const measure = (name, fn) => (...args) => {
+                    const t = performance.now();
+                    const result = fn(...args);
+                    rows[name].push(performance.now() - t);
+                    return result;
+                };
+                let geometryPerStep = 0;
+                const originalMesh = refreshWeldMeshRegion;
+                refreshWeldMeshRegion = (...args) => {
+                    const t = performance.now();
+                    const result = originalMesh(...args);
+                    const elapsed = performance.now() - t;
+                    geometryPerStep += elapsed;
+                    rows.mesh.push(elapsed);
+                    return result;
+                };
+                const originalPhysics = stepWeldPhysics;
+                stepWeldPhysics = (...args) => {
+                    geometryPerStep = 0;
+                    const t = performance.now();
+                    originalPhysics(...args);
+                    rows.logic.push(Math.max(0, performance.now() - t - geometryPerStep));
+                };
+                updateHUDMetrics = measure('hud', updateHUDMetrics);
+                const originalRender = renderer.render.bind(renderer);
+                renderer.render = (...args) => {
+                    if (input !== null) rows.lag.push(filteredAimPos.distanceTo(aimWorldPos));
+                    originalRender(...args);
+                    if (input !== null) {
+                        rows.input.push(performance.now() - input);
+                        input = null;
+                    }
+                };
+                function point(u) {
+                    const spec = STRUCTURES[0];
+                    const v = Math.sin(u * 3) * .06;
+                    const p = spec.evalPos(u, v, spec.baseH(u, v), new THREE.Vector3()).project(camera);
+                    return [(p.x + 1) * innerWidth / 2, (1 - p.y) * innerHeight / 2];
+                }
+                function tick(now) {
+                    if (!frame) {
+                        previous = now;
+                        const [x, y] = point(-2.45);
+                        updateAimFromPointer(x, y);
+                        filteredAimPos.copy(aimWorldPos);
+                        arcade.begin();
+                    } else rows.frame.push(now - previous);
+                    previous = now;
+                    const u = -2.45 + frame * .105;
+                    if (frame++ >= 42) {
+                        arcade.stop();
+                        const summary = values => {
+                            const sorted = values.slice().sort((a,b) => a-b);
+                            const p95 = sorted[Math.ceil(.95 * sorted.length) - 1] ?? 0;
+                            return { count: values.length, mean: +(values.reduce((a,b) => a+b,0) / Math.max(1,values.length)).toFixed(3), p95: +p95.toFixed(3) };
+                        };
+                        resolve({ ...Object.fromEntries(Object.entries(rows).map(([key, values]) => [key, summary(values)])), engine: renderer.getContext().getParameter(renderer.getContext().RENDERER) });
+                        return;
+                    }
+                    input = performance.now();
+                    updateAimFromPointer(...point(u));
+                    rows.ray.push(performance.now() - input);
+                    requestAnimationFrame(tick);
+                }
+                requestAnimationFrame(tick);
+            })`);
+            assert.ok(result.frame.count >= 40 && result.ray.count >= 40, JSON.stringify(result));
+            info(label + ' ' + JSON.stringify(result));
+        }
+        assert.deepEqual(uncaught, []);
+    } else {
     if (!process.argv.includes('--web-only')) {
         const url = process.env.WELDING_TEST_URL || new URL('../index.html', import.meta.url).href;
         await send('Page.navigate', { url });
         await until('typeof renderer !== "undefined" && Boolean(renderer) && document.readyState === "complete"', 'Engine initialized');
         assert.equal(await evaluate('document.getElementById("startup-error").hidden'), true);
-        assert.equal(await evaluate('document.querySelector(".home-play").textContent.includes("Iniciar carreira")'), true);
+        assert.equal(await evaluate('document.querySelector("#first-service").textContent.includes("Jogar primeiro serviço")'), true);
         await screenshot('workshop-desktop');
         await click('[data-page=modes]');
         assert.equal(await evaluate('document.querySelectorAll("[data-page=arcade], [data-page=zen], [data-page=pro]").length'), 3);
@@ -283,13 +536,20 @@ try {
         console.error({ worker, received, caches: await evaluate('caches.keys()') });
         throw error;
     }
+    await click('[data-page=career]');
+    await click('.arc-primary');
+    const beforeSave = await evaluate('localStorage.getItem("welding-master-arcade-v1")');
+    assert.equal(JSON.parse(beforeSave).last.mode, 'career');
     await send('Network.enable');
     await send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
     const beforeOffline = await evaluate('performance.timeOrigin');
     await send('Page.reload');
     await until('performance.timeOrigin !== ' + beforeOffline + ' && document.readyState === "complete" && Boolean(document.querySelector("#canvas-container canvas")) && document.querySelector("#startup-error").hidden', 'Offline static reload initializes WebGL');
-    info('Publicação estática em subpasta e recarregamento offline com service worker.');
+    assert.equal(await evaluate('localStorage.getItem("welding-master-arcade-v1")'), beforeSave);
+    assert.equal(await evaluate('document.getElementById("resume-game").hidden'), false);
+    info('Publicação estática em subpasta, recarregamento offline e progresso preservado.');
     assert.deepEqual(uncaught, []);
+    }
 } finally {
     clearTimeout(killTimer);
     socket?.close();

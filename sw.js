@@ -1,14 +1,14 @@
 'use strict';
 
-const cacheName = 'welding-master-v3';
+const cacheName = 'welding-master-v10';
 const shell = [
-    './', './index.html', './manifest.webmanifest', './assets/icon-192.png', './assets/icon-512.png',
+    './', './manifest.webmanifest', './assets/icon-192.png', './assets/icon-512.png',
     './assets/interface.css', './assets/arcade.css', './assets/three.min.js',
-    './assets/workshop.js', './assets/campaign.js', './assets/arcade.js', './assets/install.js'
+    './assets/surface.js', './assets/delivery.js', './assets/workshop.js', './assets/performance.js', './assets/campaign.js', './assets/arcade.js', './assets/install.js'
 ].map(path => new URL(path, self.registration.scope).href);
 
 self.addEventListener('install', event => {
-    event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(shell)));
+    event.waitUntil(caches.open(cacheName).then(cache => cache.addAll(shell.map(url => new Request(url, { cache: 'reload' })))));
 });
 
 self.addEventListener('activate', event => {
@@ -26,14 +26,9 @@ self.addEventListener('fetch', event => {
     if (!navigation && !shell.includes(event.request.url)) return;
     event.respondWith((async () => {
         const cache = await caches.open(cacheName);
-        try {
-            const response = await fetch(event.request);
-            if (response.ok && shell.includes(event.request.url)) await cache.put(event.request, response.clone());
-            return response;
-        } catch (error) {
-            const saved = await cache.match(event.request) || (navigation && await cache.match(shell[1]));
-            if (saved) return saved;
-            throw error;
-        }
+        // Cada aba recebe o conjunto de arquivos da mesma versão enquanto este worker a controla.
+        const saved = await cache.match(navigation ? shell[0] : event.request);
+        if (saved) return saved;
+        return fetch(event.request);
     })());
 });
