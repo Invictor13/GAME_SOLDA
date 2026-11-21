@@ -361,7 +361,7 @@
                 const gain = button === 0 && event.pointerType === 'mouse' ? sensitivity() : 1;
                 active = { id: pointerId, button, mode, x: clientX, y: clientY, aimX: clientX, aimY: clientY, gain };
                 canvas.setPointerCapture(pointerId);
-                if (mode === 'weld') startArc();
+                if (mode === 'weld') startArc(event);
             });
 
             view.addEventListener('pointermove', event => {
@@ -389,14 +389,14 @@
                 }
                 let valid;
                 if (active.gain === 1) {
-                    valid = aim(clientX, clientY);
+                    valid = aim(clientX, clientY, pointerType);
                 } else {
                     const bounds = canvas.getBoundingClientRect();
                     active.aimX = Math.max(bounds.left, Math.min(bounds.right, active.aimX + (clientX - active.x) * active.gain));
                     active.aimY = Math.max(bounds.top, Math.min(bounds.bottom, active.aimY + (clientY - active.y) * active.gain));
                     active.x = clientX;
                     active.y = clientY;
-                    valid = aim(active.aimX, active.aimY);
+                    valid = aim(active.aimX, active.aimY, pointerType);
                 }
                 if (!valid && restrictArc()) {
                     cancel();
@@ -2879,6 +2879,29 @@
         // CONTROLE DE CÂMERA (PRESETS 1-5 COM PADRÃO 1=TOPO + WASD + ORBIT + ZOOM)
         // =========================================================================
         let selectedTouchMode = 'pan';
+        let weldingTouch = null;
+        const followPreviousTarget = new THREE.Vector3();
+
+        function edgeFollow(value) {
+            const offset = value * 2 - 1;
+            const strength = THREE.MathUtils.clamp((Math.abs(offset) - .43) / .45, 0, 1);
+            return Math.sign(offset) * strength * strength;
+        }
+
+        function followTouchWhileWelding(dt) {
+            if (!weldingTouch || !isWelding || !aimUV.valid || !arcade.allowed()) return;
+            const rect = renderer.domElement.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+            const x = edgeFollow((weldingTouch.x - rect.left) / rect.width);
+            // Keep the vertical dead zone clear of the HUD and dock.
+            const y = edgeFollow((weldingTouch.y - rect.top) / rect.height);
+            const speed = 1.15 * dt;
+            const cos = Math.cos(camState.theta);
+            const sin = Math.sin(camState.theta);
+            // Advance in screen-relative directions; a small pan per frame keeps the pass continuous.
+            camState.desiredTarget.x += (x * cos + y * sin) * speed;
+            camState.desiredTarget.z += (-x * sin + y * cos) * speed;
+        }
         function setTouchMode(mode) {
             cancelPointer();
             selectedTouchMode = mode;
@@ -3010,16 +3033,22 @@
                     camState.desiredTarget.z += (dx * sin - dy * cos) * scale;
                     aimUV.valid = hasValidAim = false;
                 },
-                aim(x, y) {
+                aim(x, y, pointerType) {
                     if (!arcade.allowed()) return false;
+                    if (weldingTouch && pointerType === 'touch') {
+                        weldingTouch.x = x;
+                        weldingTouch.y = y;
+                    }
                     updateAimFromPointer(x, y);
                     return aimUV.valid;
                 },
-                startArc() {
+                startArc(event) {
+                    weldingTouch = event.pointerType === 'touch' ? { x: event.clientX, y: event.clientY } : null;
                     filteredAimPos.copy(aimWorldPos);
                     arcade.begin();
                 },
                 stopArc() {
+                    weldingTouch = null;
                     arcade.stop();
                     surfaceLayers.get(surfaceTarget)?.breakStroke();
                     lastWeldUV = null;
@@ -3455,8 +3484,15 @@
             }
 
             // 2. Câmera interativa + filtragem suave da tocha
-            arcade.step(dt, clockDt);
+            if (weldingTouch) followPreviousTarget.copy(camState.target);
+            followTouchWhileWelding(dt);
             updateCameraTransform(dt);
+            if (weldingTouch && isWelding && !camState.target.equals(followPreviousTarget)) {
+                camera.updateMatrixWorld(true);
+                updateAimFromPointer(weldingTouch.x, weldingTouch.y);
+                if (!aimUV.valid) cancelPointer();
+            }
+            arcade.step(dt, clockDt);
             torchGroup.visible = !arcade.menu() && !arcade.electrode() && aimUV.valid;
             electrodeGroup.visible = !arcade.menu() && Boolean(arcade.electrode()) && aimUV.valid;
 

@@ -23,7 +23,7 @@ A oficina guarda a melhor imagem de cada serviço concluído. Na inspeção, **B
 
 **Controles** pausa a execução para ajustar a câmera, a corrente e o som. **Voltar à peça** ou **Esc** fecha o painel. Em **Configurações → Interface da bancada**, escolha **Mínima** para recolher as instruções durante o passe.
 
-- No celular, use **Mover** para deslizar pela peça e **Girar** para mudar o ângulo com um dedo. **+** e **−** ajustam a distância. **Vista geral** reenquadra a peça, inclusive na vertical. Selecione **Soldar** antes de tocar a junta para abrir o arco.
+- No celular, use **Mover** para deslizar pela peça e **Girar** para mudar o ângulo com um dedo. **+** e **−** ajustam a distância. **Vista geral** reenquadra a peça, inclusive na vertical. Selecione **Soldar** antes de tocar a junta para abrir o arco. Durante o passe, aproxime o dedo da borda para a câmera revelar o próximo trecho.
 - Em **Configurações → Sensibilidade da tocha**, ajuste de 50% a 250% para mouse ou trackpad. Um valor maior cobre mais distância com o mesmo gesto.
 - Em Carreira, Arcade e Profissional, comece sobre a junta indicada. Se sair dela, o arco apaga e você precisa pressionar de novo na junta. No Zen, você também pode soldar nas bordas e faces visíveis. Solte para encerrar o arco.
 - Com eletrodo e assistência ligada, o jogo toca e afasta a vareta automaticamente no início do gesto. Ajuste a distância pelo controle na tela ou com **Q/E**.

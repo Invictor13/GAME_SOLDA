@@ -106,10 +106,17 @@ try {
         })()`);
         await touch('touchStart', point.x, point.y);
         await until('isWelding', 'Armed touch lights the arc on the groove');
+        await touch('touchMove', 315, point.y);
+        const initialU = await evaluate('aimUV.u');
+        await until('isWelding && camState.desiredTarget.x > .12 && aimUV.u > ' + (initialU + .03),
+            'Approaching the edge scrolls the joint and advances the weld without releasing touch');
         await touch('touchEnd');
         assert.equal(await evaluate('isWelding'), false);
+        const stoppedAt = await evaluate('camState.desiredTarget.x');
+        await delay(250);
+        assert.equal(await evaluate('camState.desiredTarget.x'), stoppedAt);
         assert.deepEqual(uncaught, []);
-        info('Peça enquadrada em 390 × 844, arraste move a bancada, e o arco exige Soldar.');
+        info('Peça enquadrada em 390 × 844, arraste move a bancada, e a câmera acompanha o passe contínuo.');
     } else if (process.argv.includes('--multipass')) {
         await send('Page.navigate', { url: new URL('../index.html', import.meta.url).href });
         await until('Boolean(document.querySelector("#canvas-container canvas")) && document.readyState === "complete"', 'Multipass startup');
@@ -554,7 +561,7 @@ try {
         try {
             let bytes = await readFile(new URL('../' + file, import.meta.url));
             if (file === 'sw.js' && !currentRelease) {
-                bytes = bytes.toString().replace('welding-master-v12', 'welding-master-v11').replace('await self.skipWaiting();', '');
+                bytes = bytes.toString().replace(/welding-master-v\d+/, 'welding-master-fixture-old').replace('await self.skipWaiting();', '');
             }
             response.writeHead(200, { 'Content-Type': mime[file.split('.').pop()] }).end(bytes);
         } catch { response.writeHead(404).end(); }

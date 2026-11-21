@@ -1,6 +1,6 @@
 'use strict';
 
-const cacheName = 'welding-master-v12';
+const cacheName = 'welding-master-v13';
 const shell = [
     './', './manifest.webmanifest', './assets/icon-192.png', './assets/icon-512.png',
     './assets/interface.css', './assets/arcade.css', './assets/three.min.js',
