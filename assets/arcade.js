@@ -22,7 +22,8 @@ const arcade = (() => {
     const jobs = [
         { name: 'Cantoneira quebrada', piece: 4, process: 'torch', amp: 115, brief: 'Encaixe as metades do suporte e preencha a raiz até o topo.', assembly: true },
         { name: 'Moldura empenada', piece: 6, secondPiece: 5, process: 'torch', amp: 120, brief: 'Escolha a ordem dos reparos. Complete as juntas da moldura em duas etapas.', assembly: true },
-        { name: 'Suporte tubular', piece: 3, process: 'torch', amp: 115, brief: 'Gire a peça para alcançar a solda em toda a circunferência.', objective: 'coverage', target: 78 }
+        { name: 'Suporte tubular', piece: 3, process: 'torch', amp: 115, brief: 'Gire a peça para alcançar a solda em toda a circunferência.', objective: 'coverage', target: 78 },
+        { name: 'Reforço do carrinho da oficina', piece: 1, process: 'E6013', amp: 120, brief: 'A prateleira do carrinho soltou do reforço. Complete o filete e, se quiser, remova a escória por trechos para conferir o cordão.', objective: 'coverage', target: 70 }
     ];
     const bench = { name: 'Passe de bancada', piece: 0, process: 'torch', amp: 115, seconds: 50, brief: 'Cubra o chanfro em 50 segundos. O desafio usa sempre a mesma peça e corrente inicial.' };
     let jobBefore = null;
@@ -50,9 +51,13 @@ const arcade = (() => {
     function persist() { $('save-warning').hidden = data.save(storage, profile); }
     function freshRod() { return { remaining: 100, gap: 0, state: 'Pronto', held: false, dwell: 0, time: 0, quality: 1 }; }
     const electrode = () => active && data.rods[active.job.process];
-    const assisted = () => active?.mode !== 'pro' && profile.settings.assisted;
+    const difficulty = () => active?.mode === 'pro' ? 'simulation'
+        : ['career', 'jobs'].includes(active?.mode) ? profile.settings.difficulty : 'standard';
+    const forgivingMouse = () => ['career', 'jobs', 'zen'].includes(active?.mode) && difficulty() !== 'simulation';
+    const assisted = () => difficulty() !== 'simulation' && profile.settings.assisted && !(mobileInput?.welding() && mobileProfile() === MobileControl.profiles.professional);
     const allowed = () => Boolean(active && !paused && !panelOpen && !shownMenu && !result && !contextLost && !document.hidden && $('tutorial-modal').classList.contains('hidden'));
     const isZen = () => active?.mode === 'zen';
+    const mobileProfile = () => MobileControl.profiles[active?.mode === 'pro' ? 'professional' : profile.settings.mobileProfile] || MobileControl.profiles.casual;
     const sensitivity = () => {
         const value = Number(profile.settings.sensitivity);
         return Number.isFinite(value) ? Math.max(50, Math.min(250, value)) / 100 : 1;
@@ -74,6 +79,7 @@ const arcade = (() => {
     }
 
     function applySettings() {
+        document.body.classList.toggle('left-handed', profile.settings.leftHanded);
         soundEnabled = profile.settings.sound;
         $('sound-btn').textContent = soundEnabled ? '🔊' : '🔇';
         if (!soundEnabled) setArcSoundActive(false);
@@ -139,7 +145,7 @@ const arcade = (() => {
         workshop.draw(renderer, dt, reduced(), light(), window.innerWidth < 760, profile.finish);
     }
     function showMenu(open = true) {
-        setTouchMode('pan');
+        setTouchMode();
         setControls(false);
         shownMenu = open;
         paused = open;
@@ -148,6 +154,7 @@ const arcade = (() => {
         $('bench-navigation').hidden = open;
         document.body.classList.toggle('menu-open', open);
         if (open) {
+            workshop.showDeliveries(profile.completedJobs);
             document.body.classList.remove('mode-zen');
             $('inspect-modal').classList.add('hidden');
             homepage();
@@ -341,7 +348,14 @@ const arcade = (() => {
             setting('Gráficos', 'graphics', [['low', 'Leve'], ['standard', 'Equilibrado'], ['high', 'Alto']]);
             setting('Movimento e flashes reduzidos', 'reduced', [['false', 'Desligados'], ['true', 'Ligados']], true);
             setting('Interface da bancada', 'minimal', [['false', 'Padrão'], ['true', 'Mínima']], true);
+            setting('Dificuldade na Carreira e nos Serviços', 'difficulty', [['assisted', 'Assistida'], ['standard', 'Padrão'], ['simulation', 'Simulação']]);
+            setting('Lado do botão Soldar', 'leftHanded', [['false', 'Direito'], ['true', 'Esquerdo']], true);
+            setting('Vibração ao perder o arco', 'vibration', [['true', 'Ligada'], ['false', 'Desligada']], true);
             setting('Abertura assistida no mouse e no toque', 'assisted', [['true', 'Ligada'], ['false', 'Manual']], true);
+            field(fields, 'Controle no celular', [['casual', 'Casual'], ['precision', 'Precisão'], ['professional', 'Profissional']], profile.settings.mobileProfile, value => {
+                profile.settings.mobileProfile = value;
+                persist();
+            });
             const sensitivityField = group(fields, 'sensitivity-field');
             const label = control('label', 'Sensibilidade da tocha', sensitivityField);
             label.htmlFor = 'aim-sensitivity';
@@ -457,6 +471,7 @@ const arcade = (() => {
             active.job.minimum ? `Meta ${active.job.minimum}` : '';
         $('rod-controls').hidden = !electrode();
         $('free-piece').hidden = !isZen();
+        $('chip-section').hidden = active.mode !== 'jobs' || !electrode();
         if (!electrode()) return;
         const status = `${active.job.process} · ${Math.ceil(rod.remaining)}% · ${rod.state}`;
         if (lastStatus !== status) {
@@ -473,7 +488,10 @@ const arcade = (() => {
         if (isWelding === on) return;
         isWelding = on;
         setArcSoundActive(on);
-        if (!on) flushPendingSlagPatch();
+        if (!on) {
+            if (mobileInput?.welding() && rod.held && profile.settings.vibration) navigator.vibrate?.(28);
+            flushPendingSlagPatch();
+        }
     }
     function begin() {
         if (!allowed()) return;
@@ -585,7 +603,15 @@ const arcade = (() => {
         if (anotherStage) profile.last = { mode, index: active.index, process: job.process, stage: 1, previous: metrics, reverse: active.reverse };
         if (mode === 'career' && !anotherStage) data.recordMission(profile, active.index, finalGrade, passed, star);
         if (mode === 'arcade') profile.arcade[active.index] = Math.max(profile.arcade[active.index] ?? 0, record);
-        if (mode === 'bench') profile.benchBest[0] = Math.max(profile.benchBest[0] || 0, record);
+        const best = profile.benchBest[0] || 0;
+        const compare = mode === 'bench' && best > 0 ? record - best : null;
+        const splits = [0, 1, 2, 3].map(i => Math.round(trace.points.slice(i * 10, (i + 1) * 10).reduce((sum, value) => sum + value, 0)));
+        const differences = mode === 'bench' && Array.isArray(profile.benchSplits)
+            ? splits.map((value, i) => value - profile.benchSplits[i]) : null;
+        if (mode === 'bench' && record > best) {
+            profile.benchBest[0] = record;
+            profile.benchSplits = splits;
+        }
         if (mode === 'jobs' || mode === 'bench') {
             resultCard = createDeliveryCard(job.name, mode === 'bench' ? `${record} pontos` : `${finalGrade}/100`, jobBefore, captureBenchPhoto());
             const prior = profile.completedJobs[active.index];
@@ -595,19 +621,24 @@ const arcade = (() => {
         }
         if (mode === 'pro') profile.pro[active.index] = Math.max(profile.pro[active.index] ?? 0, metrics.grade);
         persist();
-        result = { metrics, finalGrade, passed, anotherStage, star, record, objective, reward, medal: data.medal(finalGrade) };
+        const coverage = Array.from(trace.bins, seconds => Math.min(1, seconds / .08));
+        result = { metrics, finalGrade, passed, anotherStage, star, record, objective, reward, coverage, compare, differences, medal: data.medal(finalGrade) };
         return result;
     }
     function retry() {
         if (!active) return;
         start(active.mode, active.index, active.job.process, active.stage, active.previous, active.reverse);
     }
-    function advance() {
-        if ((isZen() || (active?.mode === 'jobs' && result && !result.passed)) && result) {
+    function continuePiece() {
+        if (result && !active.job.seconds && (!result.passed || isZen())) {
             result = null;
             paused = false;
             $('inspect-modal').classList.add('hidden');
-        } else if (result?.anotherStage) start(active.mode, active.index, active.job.process, 1, result.metrics, active.reverse);
+        }
+    }
+    function advance() {
+        if (isZen() || (active?.mode === 'jobs' && result && !result.passed)) continuePiece();
+        else if (result?.anotherStage) start(active.mode, active.index, active.job.process, 1, result.metrics, active.reverse);
         else if (active?.mode === 'jobs' && result?.passed && active.index + 1 < jobs.length) start('jobs', active.index + 1);
         else if (active?.mode === 'career' && result?.passed && active.index + 1 < data.missions.length) start('career', active.index + 1);
         else showMenu();
@@ -683,7 +714,8 @@ const arcade = (() => {
             link.href = resultCard.toDataURL('image/png');
             link.download = 'welding-master-resultado.png';
             link.click();
-        }, sensitivity, controlProfile, smoothing, graphicsProfile, adaptResolution, controlsOpen: () => panelOpen, onLoadPiece, chooseNextFreePiece, allowed, begin, stop, step, sample, renderHud, physical, electrode,
-        distance, rodLength, reduced, stability, light, finish, retry, advance, current, menu, isZen, soundChanged
+        }, sensitivity, mobileProfile, setGap, controlProfile, smoothing, graphicsProfile, adaptResolution, controlsOpen: () => panelOpen, onLoadPiece, chooseNextFreePiece, allowed, begin, stop, step, sample, renderHud, physical, electrode,
+        distance, rodLength, reduced, stability, light, finish, retry, advance, current, menu, isZen, soundChanged,
+        difficulty, forgivingMouse, continuePiece, vibration: () => profile.settings.vibration
     };
 })();

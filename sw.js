@@ -1,10 +1,10 @@
 'use strict';
 
-const cacheName = 'welding-master-v13';
+const cacheName = 'welding-master-v16';
 const shell = [
     './', './manifest.webmanifest', './assets/icon-192.png', './assets/icon-512.png',
     './assets/interface.css', './assets/arcade.css', './assets/three.min.js',
-    './assets/surface.js', './assets/delivery.js', './assets/workshop.js', './assets/performance.js', './assets/campaign.js', './assets/arcade.js', './assets/install.js'
+    './assets/surface.js', './assets/delivery.js', './assets/workshop.js', './assets/performance.js', './assets/campaign.js', './assets/mobile-controls.js', './assets/mobile-camera.js', './assets/arcade.js', './assets/install.js'
 ].map(path => new URL(path, self.registration.scope).href);
 
 self.addEventListener('install', event => {

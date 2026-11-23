@@ -25,6 +25,7 @@ function createWorkshopView() {
     const cabinet = material(0x334e5b), paper = material(0xbeb7a3, 0, .95);
     const lamp = new THREE.MeshBasicMaterial({ color: 0xffe0ae });
     const boxCache = new Map();
+    const deliveries = new Map();
 
     function box(parent, mat, width, height, depth, x, y, z) {
         const dimensions = [width, height, depth].join(',');
@@ -210,5 +211,32 @@ function createWorkshopView() {
         const context = canvas.getContext('2d');
         context.drawImage(source, (source.width - width) / 2, (source.height - height) / 2, width, height, 0, 0, canvas.width, canvas.height);
     }
-    return { draw, select, thumbnail, move(x, y) { pointerX = x; pointerY = y; needsFrame = true; } };
+    function showDeliveries(entries) {
+        for (const [index, entry] of Object.entries(entries)) {
+            if (!entry.image || deliveries.get(index)?.image === entry.image) continue;
+            const previous = deliveries.get(index);
+            previous?.texture.dispose();
+            if (previous) {
+                previous.mesh.material.dispose();
+                scene.remove(previous.mesh);
+            }
+            const image = new Image();
+            const texture = new THREE.Texture(image);
+            texture.encoding = THREE.sRGBEncoding;
+            const panel = new THREE.MeshBasicMaterial({ map: texture, color: 0xffffff });
+            const x = -5.85 + Number(index) % 2 * 3.1;
+            const y = 4.75 - Math.floor(Number(index) / 2) * 1.45;
+            if (!previous) box(scene, frame, 2.82, 1.22, .09, x, y, -6.64);
+            const mesh = box(scene, panel, 2.7, 1.12, .02, x, y, -6.57);
+            mesh.visible = false;
+            mesh.castShadow = mesh.receiveShadow = false;
+            deliveries.set(index, { image: entry.image, texture, mesh });
+            image.onload = () => {
+                if (deliveries.get(index)?.texture !== texture) return;
+                texture.needsUpdate = mesh.visible = needsFrame = true;
+            };
+            image.src = entry.image;
+        }
+    }
+    return { draw, select, thumbnail, showDeliveries, move(x, y) { pointerX = x; pointerY = y; needsFrame = true; } };
 }

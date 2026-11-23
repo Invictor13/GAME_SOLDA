@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Welding Master 3D — Simulador de Solda</title>
     <link rel="stylesheet" href="./assets/interface.css">
     <link rel="stylesheet" href="./assets/arcade.css">
@@ -104,6 +104,12 @@
         <button id="update-reload" type="button">Atualizar jogo</button>
     </aside>
     <div id="weld-reticle" hidden aria-hidden="true"></div>
+    <div id="joint-markers" aria-hidden="true">
+        <span id="pass-end" class="joint-marker pass-end" hidden></span>
+        <span id="practice-ghost" class="joint-marker practice-ghost" hidden></span>
+        <span id="inspection-pin" class="joint-marker inspection-pin" hidden></span>
+    </div>
+    <button id="practice-guide" type="button" hidden>Ver demonstração do passe</button>
 
     <!-- HUD SUPERIOR ULTRA-CLEAN (SEM SOBREPOSIÇÃO E SEM CORTES) -->
     <header id="bench-header" aria-label="Controles da bancada" class="fixed top-3 left-3 right-3 z-20 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
@@ -175,12 +181,15 @@
     <!-- DOCK INFERIOR CENTRALIZADO & MINIMALISTA -->
     <footer id="bench-footer" class="fixed bottom-3 left-1/2 -translate-x-1/2 z-20 w-max max-w-[96vw] pointer-events-none">
         <div id="touch-dock" aria-label="Controles por toque">
-            <button type="button" data-touch-mode="pan" aria-pressed="true">Mover</button>
-            <button type="button" data-touch-mode="orbit" aria-pressed="false">Girar</button>
-            <button type="button" data-touch-mode="weld" aria-pressed="false">Soldar</button>
-            <button type="button" data-touch-zoom="out" aria-label="Afastar">−</button>
-            <button type="button" data-touch-zoom="in" aria-label="Aproximar">+</button>
-            <button type="button" data-touch-zoom="reset" aria-label="Enquadrar peça inteira">Vista geral</button>
+            <div id="mobile-camera-tools">
+                <button type="button" data-mobile-camera="1">Geral</button>
+                <button type="button" data-mobile-camera="3">Precisão</button>
+                <button type="button" data-mobile-camera="4">Lateral</button>
+                <button type="button" data-mobile-camera="free" aria-pressed="false">Livre</button>
+            </div>
+            <div id="mobile-stick" aria-label="Joystick da ferramenta"><span id="mobile-knob"></span></div>
+            <button type="button" id="mobile-arc" aria-pressed="false">Soldar</button>
+            <p class="mobile-help">Joystick para mirar · Segure Soldar para abrir o arco</p>
         </div>
         <div class="glass-hud px-3 py-1.5 rounded-2xl flex flex-wrap items-center justify-center gap-2.5 sm:gap-3 pointer-events-auto">
             <!-- Indicador de Técnica Detectada -->
@@ -209,6 +218,7 @@
                 <button data-action="chipAllSlag" class="btn-glow px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/30 text-amber-300 text-xs font-industrial font-bold flex items-center gap-1" title="Remover Casca de Escória">
                     <span>🔨</span> <span class="hidden sm:inline">Picador</span>
                 </button>
+                <button id="chip-section" type="button" data-action="chipSlagSection" class="game-link" hidden>Limpar trecho</button>
                 <button data-action="resetLevel" class="bench-extra btn-glow px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-600/40 text-slate-200 text-xs font-industrial font-semibold" title="Limpar Peça">
                     Limpar
                 </button>
@@ -271,9 +281,16 @@
                 </div>
             </div>
             <p id="result-details"></p>
+            <section id="coverage-report" hidden>
+                <h2>Cobertura da junta</h2>
+                <div id="coverage-map" role="group" aria-label="Trechos da junta"></div>
+                <p id="coverage-hint" aria-live="polite"></p>
+            </section>
+            <p id="bench-comparison"></p>
             <p id="result-reward" role="status"></p>
             <figure id="delivery-preview" aria-label="Antes e depois da peça"></figure>
             <button id="download-result" data-action="downloadResult" class="hidden game-link">Baixar imagem do resultado ↓</button>
+            <button id="inspect-piece" type="button" class="game-link" hidden>Voltar à peça e ver o trecho</button>
             <div class="flex items-center justify-between gap-2 mt-5">
                 <button data-action="closeInspectAndRetry" class="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-industrial font-bold text-slate-200">Refazer Peça</button>
                 <button id="result-next" data-action="nextStructure" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 text-xs font-industrial font-bold">Próxima Estrutura →</button>
@@ -317,6 +334,7 @@
 <section id="order-hud" hidden aria-label="Ordem de serviço">
     <div class="order-heading"><div><strong id="order-title"></strong><span id="order-clock"></span></div><span id="current-amp"></span></div>
     <p id="order-text"></p>
+    <p id="mobile-pass-status"></p>
     <div id="rod-controls" hidden>
         <div class="rod-readout"><label for="arc-gap">Distância do arco</label><span id="rod-status" role="status"></span></div>
         <input id="arc-gap" type="range" min="0" max="100" value="0" aria-describedby="rod-help">
@@ -330,6 +348,8 @@
     <script src="./assets/campaign.js"></script>
     <script src="./assets/performance.js"></script>
     <script src="./assets/delivery.js"></script>
+    <script src="./assets/mobile-controls.js"></script>
+    <script src="./assets/mobile-camera.js"></script>
     <script src="./assets/arcade.js"></script>
     <script>
         'use strict';
@@ -352,6 +372,7 @@
                 const { button, pointerId, clientX, clientY } = event;
                 if (active || (button !== 0 && button !== 2)) return;
                 const mode = event.pointerType === 'touch' ? touchMode() : button === 2 ? 'orbit' : 'weld';
+                if (mode === 'ignore') return;
                 if (mode === 'weld') activateAudio();
                 if (mode === 'weld' && !aim(clientX, clientY)) {
                     if (restrictArc()) onBlocked();
@@ -522,6 +543,8 @@
         let lastWeldWorldPos = null;
         let weldSpeedSmooth = 0;
         let dwellTime = 0;
+        let mousePass = false;
+        let edgeExposure = 0;
         let puddleRadiusFactor = 1.0;
         let solidificationPhase = 0;
 
@@ -1300,6 +1323,45 @@
         }
 
         const reticle = document.getElementById('weld-reticle');
+        const passEnd = document.getElementById('pass-end');
+        const practiceGhost = document.getElementById('practice-ghost');
+        const inspectionPin = document.getElementById('inspection-pin');
+        const guideButton = document.getElementById('practice-guide');
+        const markerProjection = new THREE.Vector3();
+        let resumeU = null;
+        let inspectionU = null;
+        let guideStarted = null;
+
+        function projectJointMarker(node, u) {
+            node.hidden = u === null || !arcade.allowed();
+            if (node.hidden) return;
+            const spec = STRUCTURES[currentLevel];
+            const height = spec.baseH(u, 0) + spec.targetFillThickness + .07;
+            spec.evalPos(u, 0, height, markerProjection).applyMatrix4(workpieceGroup.matrixWorld).project(camera);
+            const { x, y, z } = markerProjection;
+            const behindPipe = spec.isPipe && Math.cos(u + pipeRollAngle - camState.phi) <= .15;
+            node.hidden = Math.abs(x) >= 1 || Math.abs(y) >= 1 || Math.abs(z) >= 1 || behindPipe;
+            if (!node.hidden) {
+                const canvas = renderer.domElement;
+                node.style.left = `${(x + 1) * canvas.clientWidth / 2}px`;
+                node.style.top = `${(1 - y) * canvas.clientHeight / 2}px`;
+            }
+        }
+
+        function updateJointMarkers(timestamp) {
+            const demo = arcade.current()?.mode === 'career' && arcade.current().index === 0;
+            guideButton.hidden = !demo || !arcade.allowed() || isWelding;
+            let guideU = null;
+            if (guideStarted !== null && demo && !isWelding && arcade.allowed()) {
+                const elapsed = (timestamp - guideStarted) / 2200;
+                const spec = STRUCTURES[currentLevel];
+                if (elapsed < 1) guideU = spec.uMin + (spec.uMax - spec.uMin) * (.18 + elapsed * .52);
+                else guideStarted = null;
+            } else guideStarted = null;
+            projectJointMarker(practiceGhost, guideU);
+            projectJointMarker(passEnd, isWelding ? null : resumeU);
+            projectJointMarker(inspectionPin, isWelding ? null : inspectionU);
+        }
         const projectedAim = new THREE.Vector3();
         function updateWeldReticle() {
             if (!aimUV.valid || !arcade.allowed()) {
@@ -1369,6 +1431,7 @@
         }
 
         function loadStructure(index) {
+            resumeU = inspectionU = guideStarted = null;
             simulationClock.reset();
             WeldingPerformance.clearInput();
             if (aimProxy) {
@@ -1748,6 +1811,7 @@
             const dTemp = new Float32Array(FIELD_VERTS);
             const ripple = new Float32Array(FIELD_VERTS);
             const burn = new Float32Array(FIELD_VERTS);
+            const undercut = new Float32Array(FIELD_VERTS);
             const slagCover = new Float32Array(FIELD_VERTS);
             const wasMolten = new Uint8Array(FIELD_VERTS);
 
@@ -1948,7 +2012,7 @@
 
             weldField = {
                 spec, uTable, vTable,
-                baseH, solidH, liquidH, dLiquid, temp, dTemp, ripple, burn, slagCover, wasMolten,
+                baseH, solidH, liquidH, dLiquid, temp, dTemp, ripple, burn, undercut, slagCover, wasMolten,
                 geo, positions, normals, colors, emissives, ripplesAttr,
                 slagGeo, slagPositions, slagNormals, slagAlphas, slagHeats, slagVertices: 0,
                 activeMinU: FIELD_NU, activeMaxU: -1,
@@ -2003,6 +2067,11 @@
 
                 // Calibração por amperagem
                 const ampRatio = amperage / s.idealAmp;
+                const cushion = mousePass && arcade.forgivingMouse();
+                const forgiving = arcade.difficulty() === 'assisted';
+                const edgeRisk = Math.abs(curV) > s.grooveHalfWidth * (forgiving ? .95 : .73) && (heatLevel > 65 || ampRatio > 1.15);
+                edgeExposure = edgeRisk ? edgeExposure + dt : 0;
+                const bitesEdge = edgeRisk && (!cushion || edgeExposure >= .22);
                 const baseRadiusU = (s.isPipe ? 0.145 : 0.175) * Math.sqrt(ampRatio) * puddleRadiusFactor;
                 const baseRadiusV = 0.185 * Math.sqrt(ampRatio) * puddleRadiusFactor;
 
@@ -2013,7 +2082,9 @@
                 const dtSub = dt / steps;
 
                 // Ajuste de taxa de deposição (3 a 4 passes completos para preencher o chanfro!)
-                const speedPenalty = weldSpeedSmooth > 3.6 ? 0.42 : (weldSpeedSmooth < 0.25 ? 1.15 : 1.0);
+                const speedPenalty = weldSpeedSmooth > 3.6 ? 0.42
+                    : cushion ? THREE.MathUtils.lerp(.50, 1, THREE.MathUtils.smoothstep(weldSpeedSmooth, .08, .65))
+                    : weldSpeedSmooth < .25 ? 1.15 : 1;
                 const depositRate = 0.34 * ampRatio * speedPenalty * arcade.physical('deposition') * arcade.stability();
                 const heatInputRate = 3.15 * ampRatio * arcade.physical('heat');
 
@@ -2088,8 +2159,9 @@
                                 ? THREE.MathUtils.clamp((f.temp[idx] / T_MELT - .72) / .28, 0, 1) : 0;
                             if (bonding > 0) {
                                 const totalMetal = f.solidH[idx] + f.liquidH[idx];
-                                const maxCap = s.depths ? s.height - f.baseH[idx] + .045
-                                    : Math.abs(vCell) <= s.grooveHalfWidth ? s.targetFillThickness * 1.48 : .24;
+                                const maxCap = s.depths ? s.height - f.baseH[idx] + (cushion ? .024 : .045)
+                                    : Math.abs(vCell) <= s.grooveHalfWidth ? s.targetFillThickness * (cushion ? 1.2 : 1.48)
+                                    : cushion ? .095 : .24;
                                 const headroom = Math.max(0, maxCap - totalMetal);
                                 const capSoft = THREE.MathUtils.clamp(headroom / .10, .16, 1);
                                 f.liquidH[idx] += Math.min(headroom, gMass * depositRate * dtSub * capSoft * bonding);
@@ -2097,8 +2169,11 @@
                             }
 
                             // Marca dano térmico se superaquecer muito
-                            if (heatLevel > 88 && gHeat > 0.55) {
+                            if (heatLevel > (forgiving ? 93 : 88) && gHeat > 0.55) {
                                 f.burn[idx] = Math.min(1.0, f.burn[idx] + dtSub * 0.9);
+                            }
+                            if (bitesEdge && Math.abs(vCell) >= s.grooveHalfWidth * .85 && gHeat > .30) {
+                                f.undercut[idx] = Math.min(.045, f.undercut[idx] + dtSub * gHeat * .065);
                             }
                         }
 
@@ -2115,7 +2190,7 @@
                 totalSamplesDeposited += dt * 20;
                 if (inGroove) onTargetSamples += dt * 20;
 
-                const speedHeatMult = weldSpeedSmooth < 0.45 ? 1.55 : (weldSpeedSmooth > 3.2 ? 0.65 : 1.0);
+                const speedHeatMult = weldSpeedSmooth < 0.45 && (!forgiving || dwellTime > .34) ? 1.55 : (weldSpeedSmooth > 3.2 ? 0.65 : 1.0);
                 heatLevel = THREE.MathUtils.clamp(heatLevel + (12.5 * ampRatio * speedHeatMult * arcade.physical('heat') - 7.2) * dt, 0, 100);
 
                 if (heatLevel >= 98) {
@@ -2129,6 +2204,7 @@
                 }
 
                 const points = arcade.sample(curU, curV, dt, inGroove, weldSpeedSmooth);
+                if (inGroove) resumeU = curU;
                 if (heatLevel < 98 && !arcade.isZen()) score += points;
 
                 lastWeldUV ??= { u: 0, v: 0 };
@@ -2342,6 +2418,7 @@
                         hSurf = f.baseH[srcIdx] + THREE.MathUtils.lerp(-0.011, metal + rippleBump, blendIn);
                     }
 
+                    hSurf -= f.undercut[srcIdx];
                     s.evalPos(u, v, hSurf, tmpP);
                     f.positions[dstIdx * 3] = tmpP.x;
                     f.positions[dstIdx * 3 + 1] = tmpP.y;
@@ -2671,6 +2748,29 @@
             });
         }
 
+        function chipSlagSection() {
+            if (!arcade.allowed() || !weldField || (!aimUV.valid && resumeU === null)) return;
+            const { iu } = uvToGridIndices(aimUV.valid ? aimUV.u : resumeU, 0);
+            const first = Math.max(1, iu - 7);
+            const last = Math.min(FIELD_NU - 2, iu + 7);
+            const f = weldField;
+            let removed = false;
+            for (let row = first; row <= last; row++) {
+                for (let col = 1; col < FIELD_NV - 1; col++) {
+                    const cell = row * FIELD_NV + col;
+                    if (f.slagCover[cell] <= .02 || f.temp[cell] >= T_MELT) continue;
+                    f.slagCover[cell] = 0;
+                    removed = true;
+                }
+            }
+            if (removed) {
+                initAudio();
+                playChippingHammerSound();
+                queueWeldMesh(first - 1, last + 1, 0, FIELD_NV - 1);
+            }
+            showLiveFeedback(removed ? 'Cordão revelado neste trecho.' : 'Não há escória fria neste trecho.', 'text-amber-300');
+        }
+
         function chipAllSlag() {
             initAudio();
             flushPendingSlagPatch();
@@ -2713,11 +2813,12 @@
             // 1. Núcleo do arco elétrico azul-branco
             if (arcade.reduced()) return;
             const arcPos = pos.clone().addScaledVector(normal, 0.045);
-            spawnGaussianSplat(arcPos, new THREE.Vector3(0, 0.05, 0), 0xe0f2fe, 0.42, 0.06, 'arc');
-            spawnGaussianSplat(arcPos, new THREE.Vector3((Math.random() - 0.5) * 0.2, 0.1, (Math.random() - 0.5) * 0.2), 0x38bdf8, 0.72, 0.09, 'arc');
+            const compact = document.body.classList.contains('mobile-controls');
+            spawnGaussianSplat(arcPos, new THREE.Vector3(0, 0.05, 0), 0xe0f2fe, compact ? .22 : .42, 0.06, 'arc');
+            if (!compact) spawnGaussianSplat(arcPos, new THREE.Vector3((Math.random() - 0.5) * 0.2, 0.1, (Math.random() - 0.5) * 0.2), 0x38bdf8, 0.72, 0.09, 'arc');
 
             // 2. Faíscas incandescentes com gravidade
-            const sparkCount = arcade.light() ? 1 : (amperage > 135 ? 4 : 2) + arcade.physical('sparks') + (arcade.stability() < 1 ? 2 : 0);
+            const sparkCount = arcade.light() ? 1 : compact ? 2 : (amperage > 135 ? 4 : 2) + arcade.physical('sparks') + (arcade.stability() < 1 ? 2 : 0);
             for (let i = 0; i < sparkCount; i++) {
                 const v = new THREE.Vector3(
                     (Math.random() - 0.5) * 4.8,
@@ -2729,7 +2830,7 @@
             }
 
             // 3. Fumaça volumétrica suave
-            if (Math.random() < 0.38) {
+            if (!compact && Math.random() < 0.38) {
                 const sv = new THREE.Vector3((Math.random() - 0.5) * 0.45, 0.75 + Math.random() * 0.5, (Math.random() - 0.5) * 0.45);
                 spawnGaussianSplat(arcPos, sv, 0x94a3b8, 0.45 + Math.random() * 0.35, 1.2 + Math.random() * 0.9, 'smoke');
             }
@@ -2814,7 +2915,7 @@
             workpieceGroup.updateMatrixWorld(true);
         }
 
-        function updateAimFromPointer(clientX, clientY) {
+        function updateAimFromPointer(clientX, clientY, mouse = false) {
             const mark = WeldingPerformance.now();
             const rect = renderer.domElement.getBoundingClientRect();
             mouseNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -2831,21 +2932,19 @@
                 const local = workpieceGroup.worldToLocal(aimLocal.copy(hit.point));
                 const uv = spec.worldToUV(local);
                 const inField = (spec.wrapU || (uv.u >= spec.uMin && uv.u <= spec.uMax)) && uv.v >= spec.vMin && uv.v <= spec.vMax;
-                const support = arcade.controlProfile().assist;
+                const difficulty = arcade.difficulty();
+                const cushion = mouse && arcade.forgivingMouse();
+                const support = difficulty === 'assisted' ? .62 : difficulty === 'simulation' ? 0
+                    : mobileAiming ? arcade.mobileProfile().assist : Math.max(cushion ? .22 : 0, arcade.controlProfile().assist);
+                const margin = difficulty === 'assisted' ? 1.45 : cushion ? 1.2 : 1.08;
                 spec.evalPos(uv.u, uv.v, spec.baseH(uv.u, uv.v), referencePoint);
                 const onJoint = (!assembly || assembly.aligned) && inField
-                    && Math.abs(uv.v) <= spec.grooveHalfWidth * 1.08
+                    && Math.abs(uv.v) <= spec.grooveHalfWidth * margin
                     && (hit.object === aimProxy || referencePoint.distanceToSquared(local) < .053);
                 if (onJoint) {
-                    const v = uv.v * (1 - support);
-                    const g = uvToGridIndices(uv.u, v);
-                    const idx = g.iu * FIELD_NV + g.iv;
-                    const height = weldField.baseH[idx] + weldField.solidH[idx] + weldField.liquidH[idx];
-                    spec.evalPos(uv.u, v, spec.baseH(uv.u, v), aimTravelPoint);
-                    spec.evalPos(uv.u, v, height, aimWorldPos).applyMatrix4(workpieceGroup.matrixWorld);
-                    spec.evalNormal(uv.u, v, aimNormal).transformDirection(workpieceGroup.matrixWorld);
-                    aimUV.u = uv.u;
-                    aimUV.v = v;
+                    const deadband = cushion ? spec.grooveHalfWidth * .09 : 0;
+                    const offset = Math.sign(uv.v) * Math.max(0, Math.abs(uv.v) - deadband);
+                    setJointAim(spec, uv.u, offset * (1 - support));
                 } else if (arcade.isZen() && hit.object !== aimProxy) {
                     surfaceTarget = hit.object;
                     surfacePoint.copy(hit.point);
@@ -2875,40 +2974,97 @@
             WeldingPerformance.timed('raycast', mark);
         }
 
+        function setJointAim(spec, u, v) {
+            const { iu, iv } = uvToGridIndices(u, v);
+            const idx = iu * FIELD_NV + iv;
+            const height = weldField.baseH[idx] + weldField.solidH[idx] + weldField.liquidH[idx];
+            spec.evalPos(u, v, spec.baseH(u, v), aimTravelPoint);
+            spec.evalPos(u, v, height, aimWorldPos).applyMatrix4(workpieceGroup.matrixWorld);
+            spec.evalNormal(u, v, aimNormal).transformDirection(workpieceGroup.matrixWorld);
+            Object.assign(aimUV, { u, v, valid: true });
+            hasValidAim = true;
+        }
+
         // =========================================================================
         // CONTROLE DE CÂMERA (PRESETS 1-5 COM PADRÃO 1=TOPO + WASD + ORBIT + ZOOM)
         // =========================================================================
-        let selectedTouchMode = 'pan';
-        let weldingTouch = null;
-        const followPreviousTarget = new THREE.Vector3();
+        let mobileInput = null;
+        let mobileAiming = false;
+        let mobileCursorReady = false;
+        let mobileFreeCamera = false;
+        let mobileDriving = true;
+        const mobileAnchor = new THREE.Vector3();
+        const mobileProjection = new THREE.Vector3();
+        const mobileSeed = new THREE.Vector3();
+        let guideOffset = 0;
 
-        function edgeFollow(value) {
-            const offset = value * 2 - 1;
-            const strength = THREE.MathUtils.clamp((Math.abs(offset) - .43) / .45, 0, 1);
-            return Math.sign(offset) * strength * strength;
-        }
-
-        function followTouchWhileWelding(dt) {
-            if (!weldingTouch || !isWelding || !aimUV.valid || !arcade.allowed()) return;
-            const rect = renderer.domElement.getBoundingClientRect();
-            if (!rect.width || !rect.height) return;
-            const x = edgeFollow((weldingTouch.x - rect.left) / rect.width);
-            // Keep the vertical dead zone clear of the HUD and dock.
-            const y = edgeFollow((weldingTouch.y - rect.top) / rect.height);
-            const speed = 1.15 * dt;
-            const cos = Math.cos(camState.theta);
-            const sin = Math.sin(camState.theta);
-            // Advance in screen-relative directions; a small pan per frame keeps the pass continuous.
-            camState.desiredTarget.x += (x * cos + y * sin) * speed;
-            camState.desiredTarget.z += (-x * sin + y * cos) * speed;
-        }
-        function setTouchMode(mode) {
+        function setTouchMode() {
             cancelPointer();
-            selectedTouchMode = mode;
-            document.querySelectorAll('[data-touch-mode]').forEach(button => {
-                button.setAttribute('aria-pressed', String(button.dataset.touchMode === mode));
-            });
+            mobileInput?.reset();
+            mobileCursorReady = mobileAiming = false;
             aimUV.valid = hasValidAim = false;
+        }
+
+        function aimMobileAt(x, y) {
+            const bounds = renderer.domElement.getBoundingClientRect();
+            mobileAiming = true;
+            updateAimFromPointer(bounds.left + (1 + x) * bounds.width / 2, bounds.top + (1 - y) * bounds.height / 2);
+            mobileAiming = false;
+            if (aimUV.valid) {
+                if (surfaceTarget) mobileAnchor.copy(aimWorldPos);
+                else mobileAnchor.copy(aimTravelPoint).applyMatrix4(workpieceGroup.matrixWorld);
+            }
+            return aimUV.valid;
+        }
+
+        function seedMobileCursor(spec) {
+            const u = spec.isPipe ? 0 : spec.uMin * .86;
+            spec.evalPos(u, 0, spec.baseH(u, 0), mobileSeed).applyMatrix4(workpieceGroup.matrixWorld).project(camera);
+            mobileCursorReady = aimMobileAt(mobileSeed.x, mobileSeed.y) || aimMobileAt(0, 0);
+        }
+
+        function moveMobileTool(dt, spec) {
+            if (!mobileInput || !arcade.allowed() || (!mobileDriving || !document.body.classList.contains('mobile-controls'))) return;
+            camera.updateMatrixWorld(true);
+            if (!mobileCursorReady) seedMobileCursor(spec);
+            if (!mobileCursorReady) return;
+            const [dx, dy] = mobileInput.vector();
+            const profile = arcade.mobileProfile();
+            if (mobileInput.welding() && arcade.difficulty() === 'assisted' && !spec.isPipe && aimUV.valid && !surfaceTarget) {
+                const u = THREE.MathUtils.clamp(aimUV.u + dx * dt * 2.5 * profile.speed, spec.uMin, spec.uMax);
+                guideOffset = THREE.MathUtils.lerp(guideOffset, dy * spec.grooveHalfWidth * .52, Math.min(1, dt * 9));
+                setJointAim(spec, u, guideOffset);
+                mobileAnchor.copy(aimTravelPoint).applyMatrix4(workpieceGroup.matrixWorld);
+                mobileProjection.copy(mobileAnchor).project(camera);
+                if (!mobileFreeCamera && (Math.abs(mobileProjection.x) > .68 || Math.abs(mobileProjection.y) > .57)) {
+                    // Recentragem discreta para juntas maiores que o enquadramento.
+                    mobileSeed.copy(mobileAnchor).sub(camState.desiredTarget);
+                    mobileSeed.y = 0;
+                    camState.desiredTarget.addScaledVector(mobileSeed, Math.min(1, dt * 2));
+                }
+                return;
+            }
+            if (!dx && !dy) return;
+            mobileProjection.copy(mobileAnchor).project(camera);
+            const scale = .87 * dt * profile.speed * Math.min(1.25, 9 / camState.radius);
+            const x = THREE.MathUtils.clamp(mobileProjection.x + dx * scale / camera.aspect, -.92, .92);
+            const y = THREE.MathUtils.clamp(mobileProjection.y - dy * scale, -.72, .76);
+            if (!aimMobileAt(x, y)) {
+                // Preserve the last visible target without bridging the gap in a live pass.
+                if (mobileInput.welding()) {
+                    if (arcade.vibration()) navigator.vibrate?.(28);
+                    mobileInput.cancelArc();
+                }
+                aimMobileAt(mobileProjection.x, mobileProjection.y);
+                return;
+            }
+            if (profile.follow && !mobileFreeCamera && (!mobileInput.welding() || arcade.difficulty() === 'standard')) {
+                const [followX, followY] = MobileCamera.followOffset(x, y, dx, dy);
+                const sin = Math.sin(camState.theta), cos = Math.cos(camState.theta);
+                const rate = Math.min(camState.radius * .85, 8) * dt;
+                camState.desiredTarget.x += (followX * cos - followY * sin) * rate;
+                camState.desiredTarget.z += (-followX * sin - followY * cos) * rate;
+            }
         }
 
         function portraitFitRadius(aspect, width, fov) {
@@ -3003,58 +3159,103 @@
             const dom = renderer.domElement;
 
             const touchDock = document.getElementById('touch-dock');
+            const markTouch = () => {
+                mobileDriving = true;
+                document.body.classList.add('mobile-controls');
+            };
+            const coarsePointer = matchMedia('(any-pointer: coarse)');
+            const detectTouch = () => {
+                if (coarsePointer.matches || navigator.maxTouchPoints > 0) markTouch();
+            };
+            detectTouch();
+            coarsePointer.addEventListener('change', detectTouch);
+            window.addEventListener('resize', detectTouch);
             dom.addEventListener('pointerdown', event => {
-                if (event.pointerType === 'touch') document.body.classList.add('touch-detected');
-            });
-            touchDock.addEventListener('click', event => {
-                const button = event.target.closest('button');
-                if (!button) return;
-                if (button.dataset.touchMode) {
-                    setTouchMode(button.dataset.touchMode);
-                } else if (button.dataset.touchZoom === 'reset') {
-                    cancelPointer();
-                    aimUV.valid = hasValidAim = false;
-                    setCameraPreset(1);
-                } else if (button.dataset.touchZoom) {
-                    cancelPointer();
-                    aimUV.valid = hasValidAim = false;
-                    const factor = button.dataset.touchZoom === 'in' ? .82 : 1.22;
-                    camState.radius = THREE.MathUtils.clamp(camState.radius * factor, 2.4, 48);
+                if (event.pointerType === 'touch') markTouch();
+                else {
+                    mobileDriving = false;
+                    mobileCursorReady = false;
                 }
             });
-            cancelPointer = bindPointerControls(dom, {
-                touchMode: () => selectedTouchMode,
-                navigate(dx, dy) {
-                    if (!arcade.allowed()) return;
-                    const scale = 2 * camState.radius * Math.tan(camera.fov * Math.PI / 360) / renderer.domElement.clientHeight;
-                    const cos = Math.cos(camState.theta);
-                    const sin = Math.sin(camState.theta);
-                    camState.desiredTarget.x += (-dx * cos - dy * sin) * scale;
-                    camState.desiredTarget.z += (dx * sin - dy * cos) * scale;
-                    aimUV.valid = hasValidAim = false;
+            touchDock.addEventListener('pointerdown', markTouch, true);
+            touchDock.addEventListener('click', event => {
+                const preset = event.target.closest('[data-mobile-camera]');
+                if (!preset) return;
+                cancelPointer();
+                if (preset.dataset.mobileCamera === 'free') {
+                    mobileFreeCamera = !mobileFreeCamera;
+                    preset.setAttribute('aria-pressed', String(mobileFreeCamera));
+                    return;
+                }
+                mobileFreeCamera = false;
+                touchDock.querySelector('[data-mobile-camera="free"]').setAttribute('aria-pressed', 'false');
+                const selected = Number(preset.dataset.mobileCamera);
+                setCameraPreset(selected);
+                if (selected === 3 && mobileCursorReady) camState.desiredTarget.copy(mobileAnchor);
+                else mobileCursorReady = false;
+            });
+            function stopWeld() {
+                arcade.stop();
+                mousePass = false;
+                edgeExposure = 0;
+                surfaceLayers.get(surfaceTarget)?.breakStroke();
+                lastWeldUV = null;
+                lastWeldWorldPos = null;
+                flushPendingSlagPatch();
+            }
+            mobileInput = MobileControl.bind({
+                stick: document.getElementById('mobile-stick'),
+                knob: document.getElementById('mobile-knob'),
+                arc: document.getElementById('mobile-arc'),
+                surface: dom,
+                enabled: arcade.allowed,
+                profile: arcade.mobileProfile,
+                floating: () => arcade.difficulty() === 'assisted',
+                begin() {
+                    if (!mobileCursorReady || !aimUV.valid) return false;
+                    initAudio();
+                    filteredAimPos.copy(aimWorldPos);
+                    guideOffset = aimUV.v;
+                    arcade.begin();
+                    return true;
                 },
-                aim(x, y, pointerType) {
-                    if (!arcade.allowed()) return false;
-                    if (weldingTouch && pointerType === 'touch') {
-                        weldingTouch.x = x;
-                        weldingTouch.y = y;
+                end: stopWeld,
+                adjustGap(dy) {
+                    if (arcade.electrode() && (arcade.difficulty() === 'simulation' || arcade.mobileProfile() === MobileControl.profiles.professional)) {
+                        arcade.setGap(arcade.distance() + dy * 1.2);
                     }
-                    updateAimFromPointer(x, y);
+                },
+                zoom(factor) { camState.radius = MobileCamera.zoomRadius(camState.radius, factor); },
+                pan(dx, dy) {
+                    if (mobileFreeCamera) {
+                        camState.theta -= dx * .0065;
+                        camState.phi = THREE.MathUtils.clamp(camState.phi - dy * .0055, .08, 1.48);
+                    } else {
+                        const scale = 2 * camState.radius * Math.tan(camera.fov * Math.PI / 360) / dom.clientHeight;
+                        const cos = Math.cos(camState.theta), sin = Math.sin(camState.theta);
+                        camState.desiredTarget.x += (-dx * cos - dy * sin) * scale;
+                        camState.desiredTarget.z += (dx * sin - dy * cos) * scale;
+                    }
+                }
+            });
+            guideButton.addEventListener('click', () => {
+                guideStarted = performance.now();
+                showLiveFeedback('Acompanhe o ponto azul e repita o passe no mesmo trecho.', 'text-sky-300');
+            });
+            const cancelDesktop = bindPointerControls(dom, {
+                touchMode: () => 'ignore',
+                aim(x, y) {
+                    if (!arcade.allowed() || mobileInput.welding()) return false;
+                    updateAimFromPointer(x, y, true);
                     return aimUV.valid;
                 },
-                startArc(event) {
-                    weldingTouch = event.pointerType === 'touch' ? { x: event.clientX, y: event.clientY } : null;
+                startArc() {
+                    mousePass = true;
+                    edgeExposure = 0;
                     filteredAimPos.copy(aimWorldPos);
                     arcade.begin();
                 },
-                stopArc() {
-                    weldingTouch = null;
-                    arcade.stop();
-                    surfaceLayers.get(surfaceTarget)?.breakStroke();
-                    lastWeldUV = null;
-                    lastWeldWorldPos = null;
-                    flushPendingSlagPatch();
-                },
+                stopArc: stopWeld,
                 orbit(dx, dy) {
                     camState.theta -= dx * 0.0065;
                     camState.phi = THREE.MathUtils.clamp(camState.phi - dy * 0.0055, 0.08, 1.48);
@@ -3068,6 +3269,11 @@
                         : 'Arco interrompido. Pressione novamente na junta.', 'text-amber-300');
                 }
             });
+
+            cancelPointer = () => {
+                cancelDesktop();
+                mobileInput.reset();
+            };
 
             function resetPan() {
                 for (const key of Object.keys(keysPressed)) keysPressed[key] = false;
@@ -3115,7 +3321,7 @@
                 camera.aspect = window.innerWidth / window.innerHeight;
                 camera.updateProjectionMatrix();
                 if (wasPortrait !== (camera.aspect < 1)) {
-                    cancelPointer();
+                    setTouchMode();
                     setCameraPreset(1);
                 }
                 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -3184,7 +3390,7 @@
                 const speed = THREE.MathUtils.clamp(weldSpeedSmooth / 3, 0, 1);
                 const basePitch = arcade.electrode() ? arcade.physical('pitch') * (2 - arcade.stability()) : 1230;
                 arcFilterNode.frequency.setTargetAtTime(basePitch + speed * 210 + heatLevel * 2.2, now, .045);
-                arcFilterNode.Q.setTargetAtTime(.85 + speed * .35, now, .07);
+                arcFilterNode.Q.setTargetAtTime(.85 + speed * .35 + (1 - arcade.stability()) * 2, now, .07);
             }
         }
 
@@ -3290,6 +3496,16 @@
             }
             document.getElementById('volume-pct').textContent = `${vol}%`;
             document.getElementById('volume-bar').style.width = `${vol}%`;
+            if (document.body.classList.contains('mobile-controls')) {
+                const precision = totalSamplesDeposited > 0 ? Math.round(onTargetSamples / totalSamplesDeposited * 100) : null;
+                const label = mobileInput?.welding()
+                    ? `Avanço ${weldSpeedSmooth < .42 ? 'lento' : weldSpeedSmooth > 3.1 ? 'rápido' : 'ideal'} · Calor ${Math.round(heatLevel)}%${arcade.electrode() ? ` · Arco ${Math.round(arcade.distance())}` : ''}`
+                    : arcade.difficulty() === 'assisted' && !STRUCTURES[currentLevel].isPipe
+                        ? 'Durante o arco, mova para os lados para seguir a junta.'
+                        : `Preenchimento ${vol}%${precision === null ? '' : ` · Precisão ${precision}%`}`;
+                const status = document.getElementById('mobile-pass-status');
+                if (status.textContent !== label) status.textContent = label;
+            }
 
             document.getElementById('score-val').textContent = Math.round(score).toLocaleString('pt-BR');
             document.getElementById('combo-val').textContent = `${combo.toFixed(1)}x`;
@@ -3361,6 +3577,7 @@
             surfaceLayers.get(surfaceTarget)?.breakStroke();
             surfaceTarget = null;
             assembly.aligned = true;
+            mobileCursorReady = false;
             aimTargets.unshift(aimProxy);
             weldBeadsGroup.visible = guideGroup.visible = true;
             const fit = document.getElementById('fit-pieces');
@@ -3371,6 +3588,10 @@
 
         function rotateWorkpiece() {
             if (!STRUCTURES[currentLevel].isPipe) return;
+            if (mobileCursorReady) {
+                cancelPointer();
+                mobileCursorReady = false;
+            }
             pipeTargetRollAngle += Math.PI / 4; // +45°
             showLiveFeedback('↻ Tubulação rotacionada (+45°)', 'text-sky-300');
         }
@@ -3415,6 +3636,9 @@
                 ? (assembly.joined ? 'União concluída.' : assembly.aligned ? 'Peças encaixadas. Falta completar o cordão.' : 'Peças ainda separadas.')
                 : report.reward || '';
             set('result-details', `Cobertura ${metrics.coverage}% · Avanço ${metrics.pace}% · Regularidade ${metrics.regularity}% · Arco ${metrics.stability}% · Trocas ${metrics.replacements}`);
+            renderCoverageReport(report, session);
+            const signed = value => value > 0 ? `+${value}` : String(value);
+            set('bench-comparison', report.compare === null ? '' : `${signed(report.compare)} pontos em relação ao recorde anterior${report.differences ? ` · Ganho por quarto da junta: ${report.differences.map(signed).join(' / ')}` : ''}.`);
             const card = arcade.card();
             const preview = document.getElementById('delivery-preview');
             preview.replaceChildren();
@@ -3431,6 +3655,64 @@
             modal.classList.remove('hidden');
             if (!zen && passed && medal) playSlagPopTick();
         }
+
+        function renderCoverageReport(report, session) {
+            const section = document.getElementById('coverage-report');
+            const map = document.getElementById('coverage-map');
+            const hint = document.getElementById('coverage-hint');
+            const open = document.getElementById('inspect-piece');
+            const spec = STRUCTURES[currentLevel];
+            const f = weldField;
+            // Group the recorded travel samples into eight selectable regions.
+            const regions = Array.from({ length: 8 }, (_, region) => {
+                const samples = report.coverage.slice(region * 5, region * 5 + 5);
+                return { coverage: Math.round(samples.reduce((sum, value) => sum + value, 0) * 20), burn: false, bite: false };
+            });
+            for (let row = 0; row < FIELD_NU; row++) {
+                const region = regions[Math.min(7, Math.floor(row * 8 / FIELD_NU))];
+                for (let col = 0; col < FIELD_NV; col++) {
+                    const cell = row * FIELD_NV + col;
+                    region.burn ||= f.burn[cell] > .08;
+                    region.bite ||= f.undercut[cell] > .002;
+                }
+            }
+            map.replaceChildren();
+            section.hidden = arcade.isZen() && regions.every(region => !region.coverage);
+            open.hidden = section.hidden || Boolean(session.job.seconds) || (report.passed && !arcade.isZen());
+            inspectionU = null;
+            const select = index => {
+                const region = regions[index];
+                inspectionU = spec.uMin + (spec.uMax - spec.uMin) * (index + .5) / regions.length;
+                hint.textContent = `Trecho ${index + 1} · ${region.coverage}% de cobertura${region.burn ? ' · Calor excessivo' : ''}${region.bite ? ' · Mordedura' : ''}.`;
+                Array.from(map.children).forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)));
+            };
+            regions.forEach((region, i) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.textContent = String(i + 1);
+                button.dataset.condition = region.bite || region.burn ? 'damaged' : region.coverage >= 75 ? 'covered' : 'partial';
+                button.setAttribute('aria-label', `Trecho ${i + 1}, ${region.coverage}% de cobertura`);
+                button.addEventListener('click', () => select(i));
+                map.append(button);
+            });
+            if (!section.hidden) {
+                const damaged = regions.findIndex(region => region.bite || region.burn);
+                const weakest = regions.indexOf(regions.reduce((a, b) => a.coverage <= b.coverage ? a : b));
+                select(damaged >= 0 ? damaged : weakest);
+            }
+        }
+
+        document.getElementById('inspect-piece').addEventListener('click', () => {
+            if (inspectionU === null) return;
+            arcade.continuePiece();
+            const spec = STRUCTURES[currentLevel];
+            setCameraPreset(3);
+            if (spec.isPipe) pipeTargetRollAngle = -inspectionU;
+            spec.evalPos(inspectionU, 0, spec.baseH(inspectionU, 0), mobileSeed);
+            if (!spec.isPipe) camState.desiredTarget.copy(mobileSeed);
+            else camState.desiredTarget.set(0, spec.pipeCenterY + spec.pipeOuterR * .65, 0);
+            mobileCursorReady = false;
+        });
 
         function closeInspectAndRetry() {
             arcade.retry();
@@ -3462,6 +3744,7 @@
             lastFrameTime = now;
             if (arcade.menu()) {
                 reticle.hidden = true;
+                guideButton.hidden = passEnd.hidden = practiceGhost.hidden = inspectionPin.hidden = true;
                 simulationClock.reset();
                 WeldingPerformance.clearInput();
                 arcade.drawWorkshop(dt);
@@ -3484,20 +3767,15 @@
             }
 
             // 2. Câmera interativa + filtragem suave da tocha
-            if (weldingTouch) followPreviousTarget.copy(camState.target);
-            followTouchWhileWelding(dt);
             updateCameraTransform(dt);
-            if (weldingTouch && isWelding && !camState.target.equals(followPreviousTarget)) {
-                camera.updateMatrixWorld(true);
-                updateAimFromPointer(weldingTouch.x, weldingTouch.y);
-                if (!aimUV.valid) cancelPointer();
-            }
+            moveMobileTool(dt, spec);
             arcade.step(dt, clockDt);
             torchGroup.visible = !arcade.menu() && !arcade.electrode() && aimUV.valid;
             electrodeGroup.visible = !arcade.menu() && Boolean(arcade.electrode()) && aimUV.valid;
 
             if (hasValidAim) {
-                filteredAimPos.lerp(aimWorldPos, WeldingPerformance.visualBlend(arcade.smoothing(), dt));
+                const blend = isWelding && arcade.difficulty() === 'assisted' ? 1 : WeldingPerformance.visualBlend(arcade.smoothing(), dt);
+                filteredAimPos.lerp(aimWorldPos, blend);
                 updateTorchPose(filteredAimPos, aimNormal);
             }
 
@@ -3591,6 +3869,7 @@
 
             renderer.render(scene, camera);
             updateWeldReticle();
+            updateJointMarkers(now);
             WeldingPerformance.rendered(renderer, scene);
         }
 
@@ -3602,6 +3881,7 @@
             rotateWorkpiece,
             fitAssembly,
             chipAllSlag,
+            chipSlagSection,
             resetLevel,
             inspectWeld,
             downloadResult: () => arcade.downloadCard(),

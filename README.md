@@ -15,15 +15,20 @@ No modo **Zen**, escolha **Chapas soltas**, **Blocos maciços** ou **Barras reta
 
 ## Serviços e entregas
 
-**Jogar primeiro serviço** abre a cantoneira quebrada. Em **Ordens de serviço**, também estão disponíveis a moldura em duas etapas, com escolha da ordem dos reparos, e o suporte tubular. Encaixe, preencha a junta e use **Inspecionar** para conferir a entrega. Em um serviço incompleto, **Voltar à peça** permite continuar o trabalho.
+**Jogar primeiro serviço** abre a cantoneira quebrada. Em **Ordens de serviço**, também estão disponíveis a moldura em duas etapas, o suporte tubular e o reforço do carrinho da oficina. No carrinho, a ação **Limpar trecho** retira a escória fria perto da mira ou do fim do último passe.
 
-A oficina guarda a melhor imagem de cada serviço concluído. Na inspeção, **Baixar imagem do resultado** exporta o antes e depois em PNG. O **Desafio de bancada**, em **Modos de jogo**, oferece um passe de 50 segundos com peça e corrente fixas e guarda o recorde neste navegador.
+Na inspeção, selecione um dos oito trechos da junta para conferir a cobertura e localizar mordeduras e calor excessivo. Em ordens sem cronômetro que ainda precisam de trabalho, **Voltar à peça e ver o trecho** aproxima a câmera e marca a área selecionada. Em **Primeiro Arco**, use **Ver demonstração do passe** para acompanhar uma prévia do movimento.
+
+A oficina guarda a melhor imagem de cada serviço concluído e exibe as fotos no mural. Na inspeção, **Baixar imagem do resultado** exporta o antes e depois em PNG. O **Desafio de bancada**, em **Modos de jogo**, oferece um passe de 50 segundos com peça e corrente fixas. Depois de estabelecer um recorde com esta versão, a inspeção compara os pontos de cada quarto da junta com a melhor tentativa.
 
 ## Controle da bancada
 
 **Controles** pausa a execução para ajustar a câmera, a corrente e o som. **Voltar à peça** ou **Esc** fecha o painel. Em **Configurações → Interface da bancada**, escolha **Mínima** para recolher as instruções durante o passe.
 
-- No celular, use **Mover** para deslizar pela peça e **Girar** para mudar o ângulo com um dedo. **+** e **−** ajustam a distância. **Vista geral** reenquadra a peça, inclusive na vertical. Selecione **Soldar** antes de tocar a junta para abrir o arco. Durante o passe, aproxime o dedo da borda para a câmera revelar o próximo trecho.
+Em **Configurações → Dificuldade na Carreira e nos Serviços**, **Assistida** aproxima mais a mira do centro e tolera pequenas pausas antes de aumentar o calor. No mouse, **Padrão** e **Assistida** amortecem desvios curtos e reduzem a deposição quando a tocha fica quase parada. **Simulação** reduz a margem de correção e exige abertura manual com eletrodo. Arcade, Desafio de bancada e Profissional têm regras próprias.
+
+- No celular, mova a mira com o **joystick esquerdo** e segure **Soldar** com o polegar direito para abrir o arco. Arraste na bancada para mover a câmera, ou gire a vista selecionando **Livre**. Use dois dedos para aproximar ou afastar enquanto o arco estiver solto. **Geral**, **Precisão** e **Lateral** ajudam a reenquadrar. Em **Configurações → Controle no celular**, escolha Casual, Precisão ou Profissional. O modo de jogo Profissional usa o perfil manual. Com eletrodo no perfil manual, deslize para cima mantendo **Soldar** pressionado para aumentar a distância do arco.
+- Na dificuldade **Assistida**, o joystick se ancora no primeiro toque. Durante o arco, mova para os lados para percorrer juntas retas e curvas e para cima ou para baixo para corrigir o alinhamento. Na tubulação, acompanhe a junta visível e gire o tubo entre passes. Em Configurações, é possível inverter o lado do botão **Soldar** e desligar a vibração, disponível em aparelhos compatíveis.
 - Em **Configurações → Sensibilidade da tocha**, ajuste de 50% a 250% para mouse ou trackpad. Um valor maior cobre mais distância com o mesmo gesto.
 - Em Carreira, Arcade e Profissional, comece sobre a junta indicada. Se sair dela, o arco apaga e você precisa pressionar de novo na junta. No Zen, você também pode soldar nas bordas e faces visíveis. Solte para encerrar o arco.
 - Com eletrodo e assistência ligada, o jogo toca e afasta a vareta automaticamente no início do gesto. Ajuste a distância pelo controle na tela ou com **Q/E**.

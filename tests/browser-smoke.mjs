@@ -42,7 +42,7 @@ try {
         if (message.id) {
             const request = requests.get(message.id);
             requests.delete(message.id);
-            if (message.error) request.reject(Error(message.error.message));
+            if (message.error) request.reject(Error(`${request.method}: ${message.error.message}`));
             else request.resolve(message.result);
         }
         if (message.method === 'Runtime.consoleAPICalled' && ['error', 'warning'].includes(message.params.type)) logged.push(message.params.args.map(arg => arg.description || arg.value));
@@ -51,7 +51,7 @@ try {
     });
     function send(method, params = {}) {
         return new Promise((resolve, reject) => {
-            requests.set(++nextId, { resolve, reject });
+            requests.set(++nextId, { method, resolve, reject });
             socket.send(JSON.stringify({ id: nextId, method, params }));
         });
     }
@@ -83,40 +83,93 @@ try {
         await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 2 });
         await send('Page.navigate', { url: new URL('../index.html', import.meta.url).href });
         await until('Boolean(document.querySelector("#canvas-container canvas")) && document.readyState === "complete"', 'Mobile startup');
+        await click('[data-page=settings]');
+        await evaluate(`(() => {
+            const fields = document.querySelectorAll('#menu-content select');
+            fields[1].value = 'low';
+            fields[1].dispatchEvent(new Event('change'));
+            fields[2].value = 'true';
+            fields[2].dispatchEvent(new Event('change'));
+        })()`);
+        await click('#menu-back');
         await click('[data-page=career]');
         await click('.arc-primary');
-        await until('camState.radius > 12 && camera.position.length() > 12', 'Portrait overview settles');
-        assert.equal(await evaluate(`(() => {
-            return [-4.3, 4.3].every(x => Math.abs(new THREE.Vector3(x, .3, 0).project(camera).x) < .96);
-        })()`), true);
-        assert.equal(await evaluate('document.querySelector("[data-touch-mode=pan]").getAttribute("aria-pressed")'), 'true');
-        const touch = (type, x, y) => send('Input.dispatchTouchEvent', {
-            type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }]
-        });
-        await touch('touchStart', 195, 420);
-        await touch('touchMove', 250, 420);
-        await touch('touchEnd');
-        assert.equal(await evaluate('!isWelding && Math.abs(camState.desiredTarget.x) > .1'), true);
-        await click('[data-touch-zoom=reset]');
-        await until('Math.abs(camState.target.x) < .02', 'Overview recenters');
-        await click('[data-touch-mode=weld]');
-        const point = await evaluate(`(() => {
-            const projected = new THREE.Vector3(0, STRUCTURES[0].baseH(0, 0), 0).project(camera);
-            return { x: (1 + projected.x) * innerWidth / 2, y: (1 - projected.y) * innerHeight / 2 };
+        await until('mobileCursorReady && camState.radius > 12', 'Portrait overview and indirect aim settle');
+        const bounds = selector => evaluate(`(() => {
+            const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+            return { x: r.x + r.width / 2, y: r.y + r.height / 2, width: r.width };
         })()`);
-        await touch('touchStart', point.x, point.y);
-        await until('isWelding', 'Armed touch lights the arc on the groove');
-        await touch('touchMove', 315, point.y);
-        const initialU = await evaluate('aimUV.u');
-        await until('isWelding && camState.desiredTarget.x > .12 && aimUV.u > ' + (initialU + .03),
-            'Approaching the edge scrolls the joint and advances the weld without releasing touch');
-        await touch('touchEnd');
+        const joystick = await bounds('#mobile-stick');
+        const button = await bounds('#mobile-arc');
+        assert.ok(joystick.width >= 44 && button.width >= 44 && joystick.x < 120 && button.x > 270);
+        const touch = (type, touchPoints) => send('Input.dispatchTouchEvent', { type, touchPoints });
+        const beforePan = await evaluate('camState.desiredTarget.x');
+        await touch('touchStart', [{ x: 195, y: 420, id: 11 }]);
+        await touch('touchMove', [{ x: 221, y: 420, id: 11 }]);
+        await touch('touchEnd', []);
         assert.equal(await evaluate('isWelding'), false);
-        const stoppedAt = await evaluate('camState.desiredTarget.x');
-        await delay(250);
-        assert.equal(await evaluate('camState.desiredTarget.x'), stoppedAt);
+        assert.notEqual(await evaluate('camState.desiredTarget.x'), beforePan);
+        await click('[data-mobile-camera="1"]');
+        await until('mobileCursorReady && Math.abs(camState.target.x) < .02', 'Overview returns to piece');
+        const startU = await evaluate('aimUV.u');
+        const startCamera = await evaluate('camState.desiredTarget.x');
+        const trigger = { x: button.x, y: button.y, id: 1 };
+        const direction = { x: joystick.x + joystick.width * .26, y: joystick.y, id: 2 };
+        await touch('touchStart', [trigger]);
+        await until('isWelding', 'Arc button ignites the virtual target');
+        await touch('touchStart', [trigger, direction]);
+        try {
+            await until('isWelding && aimUV.u > ' + (startU + .25) + ' && Math.abs(camState.desiredTarget.x - ' + startCamera + ') > .04',
+                'Two fingers move the arc and the camera together');
+            await until('isWelding && aimUV.u > 3.05', 'Two-thumb pass reaches the far end of the groove');
+        } catch (error) {
+            console.error(await evaluate('({ isWelding, aimUV, target: camState.target.toArray(), vector: mobileInput.vector(), pressed: mobileInput.welding(), seed: mobileAnchor.toArray(), frames: performance.now() })'));
+            throw error;
+        }
+        await touch('touchEnd', []);
+        assert.equal(await evaluate('isWelding'), false);
+        await click('[data-action=inspectWeld]');
+        assert.equal(await evaluate('document.querySelector("#insp-comment").textContent'), 'Ordem aprovada.',
+            await evaluate('document.querySelector("#result-details").textContent'));
+        await click('#result-next');
+        await send('Emulation.setDeviceMetricsOverride', { width: 844, height: 390, deviceScaleFactor: 1, mobile: true });
+        await until('innerWidth === 844 && mobileCursorReady', 'Landscape touch layout restarts with no live arc');
+        assert.equal(await evaluate('isWelding'), false);
+        assert.ok((await bounds('#mobile-stick')).x < (await bounds('#mobile-arc')).x);
+        await click('#leave-game');
+        await click('[data-page=settings]');
+        await evaluate(`(() => {
+            const set = (value, option) => {
+                const field = [...document.querySelectorAll('#menu-content select')]
+                    .find(select => [...select.options].some(choice => choice.textContent === option));
+                field.value = value;
+                field.dispatchEvent(new Event('change'));
+            };
+            set('assisted', 'Assistida');
+            set('true', 'Esquerdo');
+        })()`);
+        await click('#menu-back');
+        await click('[data-page=career]');
+        await click('.arc-primary');
+        await evaluate('loadStructure(2)');
+        await until('mobileCursorReady && arcade.difficulty() === "assisted"', 'Assisted curved joint is ready');
+        const leftTrigger = await bounds('#mobile-arc');
+        const rightStick = await bounds('#mobile-stick');
+        assert.ok(leftTrigger.x < rightStick.x);
+        const assistedStart = await evaluate('aimUV.u');
+        await touch('touchStart', [{ ...leftTrigger, id: 4 }, { ...rightStick, id: 5 }]);
+        await until('isWelding', 'Assisted arc ignites');
+        await touch('touchMove', [{ ...leftTrigger, id: 4 }, { ...rightStick, x: rightStick.x + 30, id: 5 }]);
+        await until(`isWelding && aimUV.u > ${assistedStart + .35} && Math.abs(aimUV.v) < .1`, 'Guided joystick follows the curve');
+        await touch('touchEnd', []);
+        await click('[data-action=inspectWeld]');
+        assert.equal(await evaluate('document.querySelectorAll("#coverage-map button").length'), 8);
+        await click('#coverage-map button:nth-child(3)');
+        assert.match(await evaluate('document.getElementById("coverage-hint").textContent'), /Trecho 3/);
+        await click('#inspect-piece');
+        await until('arcade.allowed() && !document.getElementById("inspection-pin").hidden', 'Inspection returns to the selected section');
         assert.deepEqual(uncaught, []);
-        info('Peça enquadrada em 390 × 844, arraste move a bancada, e a câmera acompanha o passe contínuo.');
+        info('Retrato e paisagem, dois polegares, curva assistida, comandos invertidos e retorno ao trecho inspecionado.');
     } else if (process.argv.includes('--multipass')) {
         await send('Page.navigate', { url: new URL('../index.html', import.meta.url).href });
         await until('Boolean(document.querySelector("#canvas-container canvas")) && document.readyState === "complete"', 'Multipass startup');
@@ -513,6 +566,10 @@ try {
         await click('[data-page=modes]');
         await click('[data-page=arcade]');
         await click('.arc-primary');
+        await until(`(() => {
+            const point = ${groove}(0);
+            return point.x > 0 && point.x < innerWidth && point.y > 0 && point.y < innerHeight;
+        })()`, 'Arcade camera frames the test joint');
         const arcadePoint = await evaluate(groove + '(0)');
         await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...arcadePoint, button: 'left', buttons: 1, clickCount: 1 });
         await until('arcade.current().remaining < 39.5', 'Arcade clock advances after a weld gesture');
@@ -524,8 +581,8 @@ try {
         assert.match(await evaluate('document.querySelector("#rod-help").textContent'), /Q aproxima/);
         await click('#leave-game');
         info('Retomada após recarregar, relógio Arcade e bancada Profissional.');
-        await send('Emulation.setDeviceMetricsOverride', { width: 414, height: 820, deviceScaleFactor: 1, mobile: true });
         await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 2 });
+        await send('Emulation.setDeviceMetricsOverride', { width: 414, height: 820, deviceScaleFactor: 1, mobile: true });
         assert.equal(await evaluate('document.querySelector("#game-menu").scrollWidth <= innerWidth'), true);
         await screenshot('workshop-mobile');
         await click('[data-page=modes]');
@@ -537,9 +594,12 @@ try {
         })()`);
         await click('.arc-primary');
         await delay(400);
-        const touch = await project(0);
-        await click('[data-touch-mode=weld]');
-        await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...touch, id: 1 }] });
+        await until('mobileCursorReady', 'Mobile cursor ready for assisted rod');
+        const trigger = await evaluate(`(() => {
+            const rect = document.getElementById('mobile-arc').getBoundingClientRect();
+            return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+        })()`);
+        await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...trigger, id: 1 }] });
         await until('arcade.rodLength() < 99 && isWelding', 'Touch starts and consumes the assisted rod');
         await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
         assert.equal(await evaluate('isWelding'), false);

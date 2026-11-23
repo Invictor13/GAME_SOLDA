@@ -35,8 +35,8 @@ const WeldingCampaign = (() => {
     const loadSave = (storage, prefersReducedMotion = false) => {
         const base = {
             records: {}, arcade: {}, pro: {}, completedJobs: {}, benchBest: {}, xp: 0, credits: 0, finishes: 0,
-            owned: ['sand'], finish: 'sand', last: null,
-            settings: { sound: true, graphics: 'standard', reduced: prefersReducedMotion, assisted: true, minimal: false, sensitivity: 100, control: 'precision', smoothing: null, adaptive: true }
+            owned: ['sand'], finish: 'sand', last: null, benchSplits: null,
+            settings: { mobileProfile: 'casual', difficulty: 'standard', leftHanded: false, vibration: true, sound: true, graphics: 'standard', reduced: prefersReducedMotion, assisted: true, minimal: false, sensitivity: 100, control: 'precision', smoothing: null, adaptive: true }
         };
         try {
             const saved = JSON.parse(storage.getItem(saveKey));

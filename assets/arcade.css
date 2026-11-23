@@ -202,55 +202,75 @@ body.reduced-motion *, body.reduced-motion *::before, body.reduced-motion *::aft
 #weld-reticle.arc-lit::after { background: #7ef4e0; }
 
 #touch-dock { display: none; }
-@media (any-pointer: coarse) {
-    #touch-dock { display: flex; }
+.mobile-controls #touch-dock { display: contents; }
+.mobile-controls #bench-footer { bottom: max(.65rem, env(safe-area-inset-bottom)); }
+#mobile-stick, #mobile-arc, #mobile-camera-tools, .mobile-help { position: fixed; pointer-events: auto; z-index: 24; }
+#mobile-stick, #mobile-arc {
+    bottom: max(4.6rem, calc(env(safe-area-inset-bottom) + 3.8rem));
+    width: clamp(68px, 19vw, 100px);
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+    border: 1px solid #708397;
+    border-radius: 50%;
+    background: #182635ed;
+    color: #fff2d4;
+    font-weight: 800;
+    user-select: none;
+    touch-action: none;
 }
-body.touch-detected #touch-dock { display: flex; }
-#touch-dock {
-    max-width: min(95vw, 31rem);
-    flex-wrap: wrap;
+#mobile-stick { left: max(.7rem, env(safe-area-inset-left)); }
+#mobile-knob {
+    width: 40%;
+    aspect-ratio: 1;
+    background: #7d93a7;
+    border: 2px solid #bccbdb;
+    border-radius: 50%;
+    pointer-events: none;
+}
+#mobile-arc {
+    right: max(.7rem, env(safe-area-inset-right));
+    width: clamp(78px, 21vw, 108px);
+    background: #503712ef;
+    border-color: #ffc16d;
+}
+.left-handed #mobile-stick { left: auto; right: max(.7rem, env(safe-area-inset-right)); }
+.left-handed #mobile-arc { right: auto; left: max(.7rem, env(safe-area-inset-left)); }
+#mobile-arc[aria-pressed="true"] { background: #146058; border-color: #7ef4e0; }
+#mobile-camera-tools {
+    display: flex;
     justify-content: center;
     gap: .25rem;
-    margin-bottom: .35rem;
-    padding: .35rem;
-    background: #111a22ed;
-    border: 1px solid var(--line);
-    border-radius: .55rem;
-    pointer-events: auto;
+    bottom: max(8.6rem, calc(env(safe-area-inset-bottom) + 7.6rem));
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: 95vw;
 }
-#bench-footer #touch-dock button {
-    min-width: 44px;
+#mobile-camera-tools button {
     min-height: 44px;
-    padding: .35rem .5rem;
+    padding: .2rem .5rem;
     border: 1px solid var(--line);
     border-radius: .35rem;
     background: var(--ink);
     color: var(--text);
-    font-size: .78rem;
-    touch-action: manipulation;
+    font-size: .76rem;
 }
-#bench-footer #touch-dock button[aria-pressed="true"] {
-    border-color: var(--amber);
-    color: var(--amber);
-    background: #362a1a;
-}
-#bench-footer #touch-dock button[data-touch-mode="weld"][aria-pressed="true"] {
-    border-color: #7ef4e0;
-    color: #7ef4e0;
-    background: #143b39;
-}
-#bench-footer:has(#touch-dock) { bottom: max(.45rem, env(safe-area-inset-bottom)); }
-@media (any-pointer: coarse) and (max-width: 760px) {
-    #bench-header { bottom: 8.8rem; }
-    .bench-options #bench-header { bottom: 8.8rem; }
-    #bench-navigation { right: max(.55rem, env(safe-area-inset-right)); top: max(.6rem, env(safe-area-inset-top)); }
-    #bench-navigation button { min-height: 44px; }
-}
-
-/* Narrow portrait layouts also need the dock when a browser misreports its pointer type. */
-@media (max-width: 760px) and (orientation: portrait) {
-    #touch-dock { display: flex; }
-    .bench-options #bench-header { bottom: 8.8rem; }
+#mobile-camera-tools button[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); }
+.mobile-help { display: none; }
+.mobile-controls #bench-footer:has(#mobile-arc[aria-pressed="true"]) #mobile-camera-tools,
+.mobile-controls #bench-footer:has(#mobile-arc[aria-pressed="true"]) > .glass-hud { visibility: hidden; }
+.mobile-controls:has(#mobile-arc[aria-pressed="true"]) #order-text,
+.mobile-controls:has(#mobile-arc[aria-pressed="true"]) #rod-controls,
+.mobile-controls:has(#mobile-arc[aria-pressed="true"]) #bench-navigation { visibility: hidden; }
+.mobile-controls #bench-footer { transform: none; left: 0; right: 0; width: auto; max-width: none; }
+.mobile-controls #bench-footer > .glass-hud { margin-inline: auto; width: fit-content; max-width: calc(100vw - 1rem); }
+.mobile-controls .bench-options #bench-header { bottom: 12rem; }
+@media (orientation: landscape) {
+    #mobile-stick, #mobile-arc { bottom: max(.75rem, env(safe-area-inset-bottom)); }
+    #mobile-camera-tools { bottom: max(3.5rem, calc(env(safe-area-inset-bottom) + 3rem)); }
+    .mobile-controls #order-hud { top: max(.6rem, env(safe-area-inset-top)); left: max(.7rem, env(safe-area-inset-left)); }
+    .mobile-controls #order-text, .mobile-controls #rod-help { display: none; }
 }
 #update-notice {
     position: fixed;
@@ -268,3 +288,41 @@ body.touch-detected #touch-dock { display: flex; }
     font-size: .85rem;
 }
 #update-notice button { min-height: 44px; margin-inline-start: .4rem; color: var(--amber); }
+
+#mobile-pass-status { display: none; }
+.mobile-controls #mobile-pass-status { display: block; margin: .2rem 0 0; color: #c0eee7; }
+#joint-markers { position: fixed; inset: 0; z-index: 18; pointer-events: none; }
+.joint-marker {
+    position: absolute;
+    width: 1rem;
+    height: 1rem;
+    transform: translate(-50%, -50%);
+    border: 2px solid #a0f1ec;
+    border-radius: 50%;
+    box-shadow: 0 0 0 .16rem #122124b8;
+}
+.practice-ghost { width: 1.3rem; height: 1.3rem; border-color: #8fe5ff; background: #43c9ff66; }
+.inspection-pin { width: 1.25rem; height: 1.25rem; border-color: #ffc06b; }
+#practice-guide {
+    position: fixed;
+    z-index: 24;
+    top: max(.6rem, env(safe-area-inset-top));
+    right: max(.6rem, env(safe-area-inset-right));
+    min-height: 44px;
+    padding: .4rem .75rem;
+    border: 1px solid #799caa;
+    border-radius: .5rem;
+    background: #182635;
+    color: #e5f7ff;
+}
+.mobile-controls #practice-guide { top: auto; bottom: max(11.5rem, calc(env(safe-area-inset-bottom) + 10.5rem)); }
+@media (orientation: landscape) {
+    .mobile-controls #practice-guide { bottom: auto; top: max(.6rem, env(safe-area-inset-top)); }
+}
+#coverage-report { margin-block: .75rem; color: #d0e0e7; font-size: .78rem; }
+#coverage-map { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: .25rem; margin-block: .3rem; }
+#coverage-map button { min-height: 44px; border-radius: .25rem; background: #5b4b31; color: white; }
+#coverage-map button[data-condition="covered"] { background: #1f665b; }
+#coverage-map button[data-condition="damaged"] { background: #873f37; }
+#coverage-map button[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #fff; }
+#bench-comparison { color: #d0e0e7; font-size: .78rem; }
